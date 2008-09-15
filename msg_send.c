@@ -80,7 +80,7 @@ int main(int argc, char* argv[]) {
    
    if(thread_data.username[0] == '\0') {
       strncpy(thread_data.username, DEFAULT_NAME, MAX_DATA_SIZE);
-      printf("%s: Due to your failure to specify a name, you will hence forth be known as '%s'.\n", argv[0], thread_data.username);
+      printf("%s: Due to your failure to specify a name, you will hence forth be known as %s.\n", argv[0], thread_data.username);
    }
    
    if(address[0] == '\0') {
@@ -88,7 +88,6 @@ int main(int argc, char* argv[]) {
       printf("%s: %s, because of your apparent inability to specify a multicast address, %s has been assigned for you.\n", argv[0], thread_data.username, address);
    }
    
-   printf("PORT %d\n", port);
    if(port < 0) {
       port = 12345;
       printf("%s: %s, as you have not chosen a port number %d has been set.\n", argv[0], thread_data.username, port);
