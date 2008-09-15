@@ -14,6 +14,11 @@
 #define DEFAULT_ADDRESS "225.0.0.1"
 #define MAX_DATA_SIZE 1024
 
+#ifndef MAXHOSTNAMELEN
+#define MAXHOSTNAMELEN 255
+#endif
+
+
 typedef struct thread_data_s {
    int test;
 } thread_data_t;
