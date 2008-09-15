@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <netinet/in.h> /* INADDR_ANY, IPPROTO_*, IP_* declarations */
 #include <arpa/inet.h> /* inet_aton */
+#include <string.h> /* memset */
 
 #define DEFAULT_PORT 12345
 #define DEFAULT_ADDRESS "225.0.0.1"
