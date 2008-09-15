@@ -145,6 +145,7 @@ int main(int argc, char* argv[]) {
 
    pthread_detach(msg_recv_tid);
    pthread_join(msg_send_tid, NULL);
+   close(sockfd);
    
    printf("Good for you! You reached the end of the program....\n");
    
