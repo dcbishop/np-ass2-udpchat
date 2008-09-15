@@ -27,6 +27,8 @@ typedef struct thread_data_s {
    struct sockaddr_in* their_addr;
 } thread_data_t;
 
+int sendRaw(char* message, thread_data_t* thread_data);
+int sendMessage(char* message, thread_data_t* thread_data);
 void* msg_send(void *arg);
 void* msg_recv(void *arg);
 
