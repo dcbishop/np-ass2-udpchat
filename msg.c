@@ -80,7 +80,7 @@ int main(int argc, char* argv[]) {
    
    if(thread_data.username[0] == '\0') {
       strncpy(thread_data.username, DEFAULT_NAME, MAX_DATA_SIZE);
-      printf("%s: Due to your failure to specify a name, you will hence forth be known as %s.\n", argv[0], thread_data.username);
+      printf("%s: Due to your failure to specify a name, you will hence forth be known as '%s'.\n", argv[0], thread_data.username);
    }
    
    if(address[0] == '\0') {
