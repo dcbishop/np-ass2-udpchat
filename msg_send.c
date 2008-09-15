@@ -6,6 +6,8 @@
 #include <netinet/in.h> /* INADDR_ANY, IPPROTO_*, IP_* declarations */
 #include <arpa/inet.h> /* inet_aton */
 #include <string.h> /* memset */
+#include <unistd.h> /* gethostname(...) */
+#include <netdb.h> /* MAXHOSTNAMELEN */
 
 #define DEFAULT_PORT 12345
 #define DEFAULT_ADDRESS "225.0.0.1"
@@ -16,18 +18,27 @@ int main(int argc, char* argv[]) {
    const int on = 1;
    int sockfd;
    struct sockaddr_in my_addr;
-   int bytes;
+   struct sockaddr_in their_addr;
+   char hostname[MAXHOSTNAMELEN];
 
    struct ip_mreq mreq;
    inet_aton(DEFAULT_ADDRESS, &mreq.imr_multiaddr);
    mreq.imr_interface.s_addr = INADDR_ANY;
    
+   gethostname(hostname, MAXHOSTNAMELEN);
+   
    char buffer[MAX_DATA_SIZE];
+   char username[] = "MyName";
 
    memset(&my_addr, 0, sizeof(my_addr));
    my_addr.sin_family = AF_INET;
    my_addr.sin_addr.s_addr = htonl(INADDR_ANY);
    my_addr.sin_port = htons(DEFAULT_PORT);
+
+   their_addr.sin_family = AF_INET;
+   their_addr.sin_port = htons(DEFAULT_PORT);
+   inet_aton(DEFAULT_ADDRESS, &their_addr.sin_addr);
+   memset(their_addr.sin_zero, '\0', sizeof their_addr.sin_zero);
 
    sockfd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
    if(sockfd < 0) {
@@ -51,9 +62,13 @@ int main(int argc, char* argv[]) {
       perror("setsockopt (addmemebership)");
       exit(1);
    }
+   
+   snprintf(buffer, MAX_DATA_SIZE, "<%s> %s", username, "Hello\0");
+   if(sendto(sockfd, buffer, strlen(buffer), 0, (struct sockaddr *)&their_addr, sizeof
+   their_addr) < 0) {
+      perror("sentto");
+      exit(1);
+   }
 
-   bytes = recvfrom(sockfd, buffer, MAX_DATA_SIZE, 0, NULL, 0);
-   buffer[bytes+1] = '\0';
-   printf("%s\n", buffer);
    exit(0);
 }
