@@ -10,6 +10,7 @@
 #include <netdb.h> /* MAXHOSTNAMELEN (Solaris only)*/
 #include <pthread.h>
 
+#define DEFAULT_NAME "The Unnamed One"
 #define DEFAULT_PORT 12345
 #define DEFAULT_ADDRESS "225.0.0.1"
 #define MAX_DATA_SIZE 1024
@@ -21,7 +22,8 @@
 typedef struct thread_data_s {
    int running;
    int sockfd;
-   char* username;
+   char username[MAX_DATA_SIZE];
+   char hostname[MAXHOSTNAMELEN];
    struct sockaddr_in* their_addr;
 } thread_data_t;
 
@@ -34,7 +36,6 @@ int main(int argc, char* argv[]) {
    int sockfd = -0xDEADC0DE;
    struct sockaddr_in my_addr;
    struct sockaddr_in their_addr;
-   char hostname[MAXHOSTNAMELEN];
    
    thread_data_t thread_data;
    thread_data.running = 1;
@@ -49,11 +50,25 @@ int main(int argc, char* argv[]) {
    inet_aton(DEFAULT_ADDRESS, &mreq.imr_multiaddr);
    mreq.imr_interface.s_addr = INADDR_ANY;
    
-   gethostname(hostname, MAXHOSTNAMELEN);
+   gethostname(thread_data.hostname, MAXHOSTNAMELEN);
    
-   //char buffer[MAX_DATA_SIZE];
-   //strcpy("MyName", thread_data.username);
-    
+   strncpy(thread_data.username, DEFAULT_NAME, MAX_DATA_SIZE);
+   
+   int name = -0xDEADC0DE;
+   while ((name = getopt(argc, argv, "u:r")) != -1) {
+      switch(name) {
+         case 'u':
+            strncpy(thread_data.username, optarg, MAX_DATA_SIZE);
+            break;
+         case 'r':
+            printf("%s: You have set the r flag which does nothing, thats just swell.\n", argv[0]);
+            break;
+         case '?': 
+            printf("%s: Thats not right...\n", argv[0]);
+            exit(EXIT_FAILURE);
+      }
+   }
+   
    memset(&my_addr, 0, sizeof(my_addr));
    my_addr.sin_family = AF_INET;
    my_addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -106,7 +121,7 @@ int main(int argc, char* argv[]) {
    pthread_join(msg_send_tid, NULL);
    
    printf("Good for you! You reached the end of the program....\n");
-
+   
    exit(0);
 }
 
@@ -119,15 +134,15 @@ void* msg_send(void *arg) {
    while(thread_data->running) {
       sleep(5);
     
-      snprintf(buffer, MAX_DATA_SIZE, "<%s> %s", "USERNAME", "Hello\0");
-      if(sendto(thread_data->sockfd, buffer, strlen(buffer), 0, (struct sockaddr *)&thread_data->their_addr, sizeof(thread_data->their_addr)) < 0) {
+      snprintf(buffer, MAX_DATA_SIZE-1, "<%s> %s", thread_data->username, "I am sending!\n");
+      if(sendto(thread_data->sockfd, buffer, strlen(buffer), 0, (struct sockaddr *)thread_data->their_addr, sizeof(*thread_data->their_addr)) < 0) {
          perror("sentto");
          thread_data->running = 0;
          return (void*)EXIT_FAILURE;
       }
    }
    
-   fprintf(stdout, "Send thread, self-termination...");
+   fprintf(stdout, "Send thread, self-termination...\n");
    return (void*)EXIT_SUCCESS;
 }
 
@@ -139,17 +154,21 @@ void* msg_recv(void *arg) {
    char buffer[MAX_DATA_SIZE];
   
    while(thread_data->running) {
-      bytes = recvfrom(thread_data->sockfd, buffer, MAX_DATA_SIZE, 0, NULL, 0);
+      bytes = recvfrom(thread_data->sockfd, buffer, MAX_DATA_SIZE-1, 0, NULL, 0);
       if(bytes < 0) {
          perror("recvfrom");
          thread_data->running = 0;
          return (void*)EXIT_FAILURE;
       }
       
-      buffer[bytes+1] = '\0';
-      printf("%s\n", buffer);
+      if(buffer[bytes-1] != '\n') {
+         buffer[bytes-1] = '\n';
+      }
+      buffer[bytes] = '\0';
+
+      printf("%s", buffer);
    }
    
-   fprintf(stdout, "Recv thread, self-termination...");
+   fprintf(stdout, "Recv thread, self-termination...\n");
    return (void*)EXIT_SUCCESS;
 }
