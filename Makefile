@@ -8,4 +8,4 @@ msg_send: msg_send.c
 	gcc ${SOLARISHACK} -lnsl msg_send.c -o msg_send -Wall
 
 clean:
-	rm -f msg_recv *~ *.o
+	rm -f msg_recv msg_send *~ *.o
