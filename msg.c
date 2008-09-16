@@ -9,7 +9,8 @@
 #include <unistd.h> /* gethostname(...) */
 #include <netdb.h> /* MAXHOSTNAMELEN (Solaris only)*/
 #include <pthread.h>
-#include <curses.h> /* For the prettyness */
+#include <ncurses.h> /* For the prettyness */
+#include <curses.h>
 #include <signal.h>
 
 #define DEFAULT_NAME "Sgt. Fury"
@@ -21,14 +22,43 @@
 #define MAXHOSTNAMELEN 255
 #endif
 
+struct message_node_s {
+   char* message;
+   struct message_node_s* next;
+};
+
+/*struct message_node_s* add_message(message_node_s** head_node, char* message) {
+   message_node* mn = *head_node;
+   
+   if(!mn) {
+      *head_node = malloc(sizeof(message_node));
+      mc = *head_node;
+   } else {
+      while(mn->next) {
+         mn = mn->next;
+      }
+      mn->next = malloc(sizeof(message_node));
+      mn=mn->next;
+   }
+   
+   if(!mn) {
+      return NULL;
+   }
+   
+   mn->next = NULL;
+}*/
+
 typedef struct thread_data_s {
    int running;
    int sockfd;
    char username[MAX_DATA_SIZE];
    char hostname[MAXHOSTNAMELEN];
    struct sockaddr_in* their_addr;
+   struct message_node_s* recieved;
+   int recieved_count;
+   struct message_node_s* sendque;
+   int sendque_count;
 } thread_data_t;
-
 static thread_data_t thread_data;
 
 int sendRaw(char* message, thread_data_t* thread_data);
@@ -36,6 +66,7 @@ int sendMessage(char* message, thread_data_t* thread_data);
 void* msg_send(void *arg);
 void* msg_recv(void *arg);
 void* prwdy(void *arg);
+void draw_prwdy(thread_data_t* thread_data, WINDOW* win);
 static void seppuku(int sig);
 
 int main(int argc, char* argv[]) {
@@ -48,7 +79,6 @@ int main(int argc, char* argv[]) {
    char address[MAX_DATA_SIZE] = {'\0'};
    int port = 0xDEADC0DE;
    
-   //thread_data_t thread_data;
    thread_data.running = 1;
 
    pthread_t msg_send_tid = 0xDEADC0DE;
@@ -161,8 +191,9 @@ int main(int argc, char* argv[]) {
    }
 
    pthread_detach(msg_recv_tid);
-   pthread_join(msg_send_tid, NULL);
    pthread_join(prwdy_tid, NULL);
+   pthread_join(msg_send_tid, NULL);
+   
    close(sockfd);
    
    printf("Good for you! You reached the end of the program....\n");
@@ -239,15 +270,59 @@ void* msg_recv(void *arg) {
 void* prwdy(void *arg) {
    thread_data_t* thread_data;
    thread_data = (thread_data_t*)arg; 
+   int c = 0xDEADC0DE;
+   WINDOW* win = NULL;
    
-   while(thread_data->running) {
-      sleep(1);
-      printf("This pathetic message is all that exists of the ncurses thread...\n");
+   if(!(win = initscr())) {
+      thread_data->running = 0;
+      fprintf(stderr, "ERROR initilizing ncurses...\n");
+      return (void*)EXIT_FAILURE;
    }
+   
+   nonl();
+   cbreak();
+   nodelay(win, 1);
+   
+   //if(has_color()) { - This doesn't really exist,
+      start_color();
+      
+      init_pair(COLOR_BLACK, COLOR_BLACK, COLOR_BLACK);
+      init_pair(COLOR_GREEN, COLOR_GREEN, COLOR_BLACK);
+      init_pair(COLOR_RED, COLOR_RED, COLOR_BLACK);
+      init_pair(COLOR_CYAN, COLOR_CYAN, COLOR_BLACK);
+      init_pair(COLOR_WHITE, COLOR_WHITE, COLOR_BLACK);
+      init_pair(COLOR_MAGENTA, COLOR_MAGENTA, COLOR_BLACK);
+      init_pair(COLOR_BLUE, COLOR_BLUE, COLOR_BLACK);
+      init_pair(COLOR_YELLOW, COLOR_YELLOW, COLOR_BLACK);
+   //}
+   
+   draw_prwdy(thread_data, win);
+   while(thread_data->running) {
+      c = getch();
+      if(c != ERR) {
+         if(c == 13) {
+            draw_prwdy(thread_data, win);
+         }
+      }
+      
+   }
+   
+   endwin();
    
    fprintf(stdout, "prwdy thread, self-terminating...\n");
    
    return (void*)EXIT_SUCCESS;
+}
+
+void draw_prwdy(thread_data_t* thread_data, WINDOW* win) {
+   int xmax = 0xDEADC0DE;
+   int ymax = 0xDEADC0DE;
+   getmaxyx(win, ymax, xmax);
+   
+   border('|', '|', '-', '-', '/', '\\', '\\', '/');
+   mvgetch(ymax-3, 1);
+   hline('-', xmax-2);
+   mvgetch(ymax-2, 2);
 }
 
 static void seppuku(int sig) {
