@@ -9,6 +9,8 @@
 #include <unistd.h> /* gethostname(...) */
 #include <netdb.h> /* MAXHOSTNAMELEN (Solaris only)*/
 #include <pthread.h>
+#include <curses.h> /* For the prettyness */
+#include <signal.h>
 
 #define DEFAULT_NAME "Sgt. Fury"
 #define DEFAULT_PORT 12345
@@ -27,10 +29,14 @@ typedef struct thread_data_s {
    struct sockaddr_in* their_addr;
 } thread_data_t;
 
+static thread_data_t thread_data;
+
 int sendRaw(char* message, thread_data_t* thread_data);
 int sendMessage(char* message, thread_data_t* thread_data);
 void* msg_send(void *arg);
 void* msg_recv(void *arg);
+void* prwdy(void *arg);
+static void seppuku(int sig);
 
 int main(int argc, char* argv[]) {
    const unsigned char ttl = 1;
@@ -42,14 +48,17 @@ int main(int argc, char* argv[]) {
    char address[MAX_DATA_SIZE] = {'\0'};
    int port = 0xDEADC0DE;
    
-   thread_data_t thread_data;
+   //thread_data_t thread_data;
    thread_data.running = 1;
 
-   pthread_t msg_send_tid, msg_recv_tid;
+   pthread_t msg_send_tid = 0xDEADC0DE;
+   pthread_t msg_recv_tid = 0xDEADC0DE;
+   pthread_t prwdy_tid = 0xDEADC0DE;
    
    /* return values for pthread */
    int msg_send_result = 0xDEADC0DE;
    int msg_recv_result = 0xDEADC0DE;
+   int prwdy_result = 0xDEADC0DE;
    
    struct ip_mreq mreq;
    inet_aton(DEFAULT_ADDRESS, &mreq.imr_multiaddr);
@@ -124,6 +133,8 @@ int main(int argc, char* argv[]) {
       exit(1);
    }
    
+   (void) signal(SIGINT, seppuku);
+   
    if(setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (void*)&mreq, sizeof(mreq)) < 0) {
       perror("setsockopt (addmemebership)");
       exit(1);
@@ -142,9 +153,16 @@ int main(int argc, char* argv[]) {
       perror("pthread_create (recv)");
       exit(1);
    }
+   
+   prwdy_result = pthread_create(&prwdy_tid, NULL, prwdy, (void*)&thread_data);
+   if(prwdy_result != 0) {
+      perror("pthread_create (prwdy)");
+      exit(1);
+   }
 
    pthread_detach(msg_recv_tid);
    pthread_join(msg_send_tid, NULL);
+   pthread_join(prwdy_tid, NULL);
    close(sockfd);
    
    printf("Good for you! You reached the end of the program....\n");
@@ -187,7 +205,7 @@ void* msg_send(void *arg) {
    snprintf(buffer, MAX_DATA_SIZE-1, "<%s@%s leaving chat group>\n", thread_data->username, thread_data->hostname);   
    sendRaw(buffer, thread_data);
    
-   fprintf(stdout, "Send thread, self-termination...\n");
+   fprintf(stdout, "Send thread, self-terminating...\n");
    return (void*)EXIT_SUCCESS;
 }
 
@@ -214,6 +232,30 @@ void* msg_recv(void *arg) {
       printf("%s", buffer);
    }
    
-   fprintf(stdout, "Recv thread, self-termination...\n");
+   fprintf(stdout, "Recv thread, self-terminating...\n");
    return (void*)EXIT_SUCCESS;
+}
+
+void* prwdy(void *arg) {
+   thread_data_t* thread_data;
+   thread_data = (thread_data_t*)arg; 
+   
+   while(thread_data->running) {
+      sleep(1);
+      printf("This pathetic message is all that exists of the ncurses thread...\n");
+   }
+   
+   fprintf(stdout, "prwdy thread, self-terminating...\n");
+   
+   return (void*)EXIT_SUCCESS;
+}
+
+static void seppuku(int sig) {
+   if(thread_data.running == 0) {
+      printf("Whoever is out of patience is out of possession of his soul.\n");
+      printf("\t- Francis Bacon\n");
+   } else {
+      thread_data.running = 0;
+      printf("Death-threat recived, Suiciding!\n");
+   }
 }
