@@ -54,6 +54,7 @@ int sendRaw(char* message, thread_data_t* thread_data);
 int sendMessage(char* message, thread_data_t* thread_data);
 void* msg_send(void *arg);
 void* msg_recv(void *arg);
+int priv_mesg(thread_data_t* thread_data, char* name, char* message);
 void* prwdy(void *arg);
 void draw_prwdy(thread_data_t* thread_data, WINDOW* win, char* buffer);
 static void seppuku(int sig);
@@ -382,8 +383,7 @@ void* msg_recv(void *arg) {
                thread_data->username, thread_data->hostname, thread_data->priv_port);
                
             sendRaw(message, thread_data);
-         }
-         
+         }         
       } else {
          add_message(thread_data, QUE_RECEIVE, buffer);
       }
