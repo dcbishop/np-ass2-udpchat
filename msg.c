@@ -38,8 +38,8 @@ typedef struct thread_data_s {
    char username[MAX_DATA_SIZE];
    char hostname[MAXHOSTNAMELEN];
    struct sockaddr_in* their_addr;
-   struct message_node_s* message_que[2];
-   struct message_node_s* message_last[2];
+   message_node_t* message_que[2];
+   message_node_t* message_last[2];
    int message_count[2];
    int new_messages;
 } thread_data_t;
@@ -174,11 +174,11 @@ int main(int argc, char* argv[]) {
   
    static struct option long_options[] =
    {
-      {"rflag",     no_argument,       0, 'r'},
-      {"help",     no_argument,       0, 'h'},
-      {"username",  required_argument, 0, 'u'},
-      {"mcast_addr",  required_argument, 0, 'm'},
-      {"port",  required_argument, 0, 'p'},
+      {"rflag", no_argument, 0, 'r'},
+      {"help", no_argument, 0, 'h'},
+      {"username", required_argument, 0, 'u'},
+      {"mcast_addr", required_argument, 0, 'm'},
+      {"port", required_argument, 0, 'p'},
       {0, 0, 0, 0}
    };
    int option_index;
@@ -206,6 +206,7 @@ int main(int argc, char* argv[]) {
          case '?': 
             snprintf(buffer, MAX_DATA_SIZE, "%s: Thats not right... try again...", argv[0]);
             logmsg(&thread_data, buffer, stderr);
+            usage(argv[0]);
             exit(EXIT_FAILURE);
             break;
       }
