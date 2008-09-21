@@ -38,19 +38,22 @@ typedef struct thread_data_s {
    char hostname[MAXHOSTNAMELEN];
    struct sockaddr_in* their_addr;
    struct message_node_s* message_que[2];
+   struct message_node_s* message_last[2];
    int message_count[2];
+   int new_messages;
 } thread_data_t;
 static thread_data_t thread_data;
 
 message_node_t* add_message_actual(message_node_t** head_node, char* message);
 void message_dump(message_node_t* node);
 message_node_t* add_message(thread_data_t* thread_data, int que, char* message);
+void message_apocalypse(thread_data_t* thread_data, int que);
 int sendRaw(char* message, thread_data_t* thread_data);
 int sendMessage(char* message, thread_data_t* thread_data);
 void* msg_send(void *arg);
 void* msg_recv(void *arg);
 void* prwdy(void *arg);
-void draw_prwdy(thread_data_t* thread_data, WINDOW* win);
+void draw_prwdy(thread_data_t* thread_data, WINDOW* win, char* buffer);
 static void seppuku(int sig);
 
 /* Adds a message to the message que, (Doesn't increase counter) */
@@ -85,7 +88,7 @@ message_node_t* add_message_actual(message_node_t** head_node, char* message) {
    mn->message = malloc(len * sizeof(char)+1);
    strncpy(mn->message, message, len);
    mn->message[len] = '\0';
-   
+      
    return mn;
 }
 
@@ -95,7 +98,6 @@ void message_dump(message_node_t* node) {
       printf("DEBUG MESSAGE: %s\n", node->message);
       node = node->next;
    }
-   printf("yay!\n");
 }
 
 /* Adds a message to the specified que */
@@ -107,7 +109,29 @@ message_node_t* add_message(thread_data_t* thread_data, int que, char* message) 
    }
    
    thread_data->message_count[que]++;
+   thread_data->message_last[que] = newmessage;
+   thread_data->new_messages=1;
    return newmessage;
+}
+
+/* Frees all messages in a que */
+void message_apocalypse(thread_data_t* thread_data, int que) {
+   message_node_t* node = thread_data->message_que[que];
+   message_node_t* prev = NULL;
+   while(node) {
+      //free(node->message);
+      prev = node;
+      node = node->next;
+      free(prev);
+   }
+   thread_data->message_que[que] = NULL;      
+   thread_data->message_count[que] = 0;
+}
+
+/* Dumps a message to the console and the message que */
+void logmsg(thread_data_t* thread_data, char* message, FILE* pipe) {
+   add_message(thread_data, QUE_RECEIVE, message);
+   fprintf(pipe, "%s\n", message);   
 }
 
 int main(int argc, char* argv[]) {
@@ -116,6 +140,7 @@ int main(int argc, char* argv[]) {
    int sockfd = 0xDEADC0DE;
    struct sockaddr_in my_addr;
    struct sockaddr_in their_addr;
+   char buffer[MAX_DATA_SIZE];
    
    char address[MAX_DATA_SIZE] = {'\0'};
    int port = 0xDEADC0DE;
@@ -138,11 +163,7 @@ int main(int argc, char* argv[]) {
    gethostname(thread_data.hostname, MAXHOSTNAMELEN);
    
    thread_data.username[0] = '\0';
-   
-   add_message(&thread_data, QUE_SEND, "Hello");
-   add_message(&thread_data, QUE_SEND, "Another message");
-   add_message(&thread_data, QUE_SEND, "Yet another message");
-   
+  
    int name = 0xDEADC0DE;
    while ((name = getopt(argc, argv, "u:r")) != -1) {
       switch(name) {
@@ -153,30 +174,40 @@ int main(int argc, char* argv[]) {
             strncpy(address, optarg, MAX_DATA_SIZE);
             break;
          case 'r':
-            printf("%s: You have set the r flag which does nothing, thats just swell.\n", argv[0]);
+            snprintf(buffer, MAX_DATA_SIZE, "%s: You have set the r flag which does nothing, thats just swell.", argv[0]);
+            logmsg(&thread_data, buffer, stdout);
             break;
          case 'p':
             port = atoi(optarg);
             break;
          case '?': 
-            fprintf(stderr, "%s: Thats not right... try again...\n", argv[0]);
+            snprintf(buffer, MAX_DATA_SIZE, "%s: Thats not right... try again...", argv[0]);
+            logmsg(&thread_data, buffer, stderr);
+            break;
             exit(EXIT_FAILURE);
       }
    }
    
    if(thread_data.username[0] == '\0') {
       strncpy(thread_data.username, DEFAULT_NAME, MAX_DATA_SIZE);
-      printf("%s: Due to your failure to specify a name, you will hence forth be known as '%s'.\n", argv[0], thread_data.username);
+      snprintf(buffer, MAX_DATA_SIZE, "%s: Due to your failure to specify a name, you will hence forth be known as", argv[0]);
+      logmsg(&thread_data, buffer, stdout);
+      snprintf(buffer, MAX_DATA_SIZE, "'%s'.", thread_data.username);
+      logmsg(&thread_data, buffer, stdout);
    }
    
    if(address[0] == '\0') {
       strncpy(address, DEFAULT_ADDRESS, MAX_DATA_SIZE);
-      printf("%s: %s, because of your apparent inability to specify a multicast address, %s has been assigned for you.\n", argv[0], thread_data.username, address);
+      snprintf(buffer, MAX_DATA_SIZE, "%s: %s, because of your apparent inability to specify a", argv[0], thread_data.username);
+      logmsg(&thread_data, buffer, stdout);
+      snprintf(buffer, MAX_DATA_SIZE, "multicast address, %s has been assigned for you.", address);
+      logmsg(&thread_data, buffer, stdout);
    }
    
    if(port < 0) {
       port = 12345;
-      printf("%s: %s, as you have not chosen a port number %d has been set.\n", argv[0], thread_data.username, port);
+      snprintf(buffer, MAX_DATA_SIZE, "%s: %s, as you have not chosen a port number %d has been set.", argv[0], thread_data.username, port);
+      logmsg(&thread_data, buffer, stdout);
    }
    
    memset(&my_addr, 0, sizeof(my_addr));
@@ -242,7 +273,6 @@ int main(int argc, char* argv[]) {
    close(sockfd);
    
    printf("Good for you! You reached the end of the program....\n");
-   message_dump(thread_data.message_que[QUE_SEND]);
    
    exit(0);
 }
@@ -272,20 +302,31 @@ int sendMessage(char* message, thread_data_t* thread_data) {
 void* msg_send(void *arg) {
    thread_data_t* thread_data;
    thread_data = (thread_data_t*)arg;
+   message_node_t* node = NULL;
 
    char buffer[MAX_DATA_SIZE];
-   snprintf(buffer, MAX_DATA_SIZE-1, "<%s@%s entered chat group>\n", thread_data->username, thread_data->hostname);   
+   snprintf(buffer, MAX_DATA_SIZE-1, "<%s@%s entered chat group>", thread_data->username, thread_data->hostname);   
    sendRaw(buffer, thread_data);
    
    while(thread_data->running) {
-      sleep(5);
-      sendMessage("Be amazed! For I am sending continious messages at intervals of exactly 5 seconds!\n", thread_data);
+      //add_message(thread_data, QUE_SEND, "Be amazed! For I am sending continuous messages!");
+      //add_message(thread_data, QUE_SEND, "This is the glorious 2nd message!");
+      //sendMessage("Be amazed! For I am sending continuous messages!", thread_data);
+      if(thread_data->message_count[QUE_SEND] > 0) {
+         node=thread_data->message_que[QUE_SEND];
+         while(node != NULL) {
+            sendMessage(node->message, thread_data);
+            node = node->next;
+         }
+         message_apocalypse(thread_data, QUE_SEND);
+      }
    }
    
-   snprintf(buffer, MAX_DATA_SIZE-1, "<%s@%s leaving chat group>\n", thread_data->username, thread_data->hostname);   
+   snprintf(buffer, MAX_DATA_SIZE-1, "<%s@%s leaving chat group>", thread_data->username, thread_data->hostname);   
    sendRaw(buffer, thread_data);
    
-   fprintf(stdout, "Send thread, self-terminating...\n");
+   snprintf(buffer, MAX_DATA_SIZE, "Send thread, self-terminating...");
+   logmsg(thread_data, buffer, stdout);
    return (void*)EXIT_SUCCESS;
 }
 
@@ -305,15 +346,13 @@ void* msg_recv(void *arg) {
          return (void*)EXIT_FAILURE;
       }
       
-      if(buffer[bytes-1] != '\n') {
-         buffer[bytes-1] = '\n';
-      }
       buffer[bytes] = '\0';
 
-      printf("%s", buffer);
+      add_message(thread_data, QUE_RECEIVE, buffer);
    }
    
-   fprintf(stdout, "Recv thread, self-terminating...\n");
+   snprintf(buffer, MAX_DATA_SIZE, "Recv thread, self-terminating...");
+   logmsg(thread_data, buffer, stdout);
    return (void*)EXIT_SUCCESS;
 }
 
@@ -322,19 +361,23 @@ void* prwdy(void *arg) {
    thread_data_t* thread_data;
    thread_data = (thread_data_t*)arg; 
    int c = 0xDEADC0DE;
+   int chnum = 0;
+   char buffer[MAX_DATA_SIZE] = {'\0'};
    WINDOW* win = NULL;
    
    if(!(win = initscr())) {
       thread_data->running = 0;
-      fprintf(stderr, "ERROR initilizing ncurses...\n");
+      snprintf(buffer, MAX_DATA_SIZE, "ERROR initilizing ncurses...");
+      logmsg(thread_data, buffer, stderr);
       return (void*)EXIT_FAILURE;
    }
    
    nonl();
    cbreak();
    nodelay(win, 1);
+   //halfdelay(3);
    
-   //if(has_color()) { - This doesn't really exist,
+   if(can_change_color()) {
       start_color();
       
       init_pair(COLOR_BLACK, COLOR_BLACK, COLOR_BLACK);
@@ -345,45 +388,84 @@ void* prwdy(void *arg) {
       init_pair(COLOR_MAGENTA, COLOR_MAGENTA, COLOR_BLACK);
       init_pair(COLOR_BLUE, COLOR_BLUE, COLOR_BLACK);
       init_pair(COLOR_YELLOW, COLOR_YELLOW, COLOR_BLACK);
-   //}
+   }
    
-   draw_prwdy(thread_data, win);
+   draw_prwdy(thread_data, win, buffer);
    while(thread_data->running) {
-      c = getch();
-      if(c != ERR) {
-         if(c == 13) {
-            draw_prwdy(thread_data, win);
+      while((c = getch()) != ERR) {
+         if(c == 13 || chnum > MAX_DATA_SIZE-1) {
+            add_message(thread_data, QUE_SEND, buffer);
+            chnum = 0;
+            draw_prwdy(thread_data, win, buffer);
+         } else if(c == 127 ) {
+            buffer[chnum]='\0';
+            if(chnum > 0) {
+               chnum--;
+               buffer[chnum]='\0';
+            }
+            draw_prwdy(thread_data, win, buffer);
+         } else {
+            buffer[chnum] = c;
+            chnum++;
          }
+         buffer[chnum] = '\0';
       }
-      
+      if(thread_data->new_messages) {
+         thread_data->new_messages = 0;
+         draw_prwdy(thread_data, win, buffer);
+      }
    }
    
    endwin();
    
-   fprintf(stdout, "prwdy thread, self-terminating...\n");
+   snprintf(buffer, MAX_DATA_SIZE, "Prwdy thread, self-terminating...");
+   logmsg(thread_data, buffer, stdout);
    
    return (void*)EXIT_SUCCESS;
 }
 
 /* Draws the ncurses interface */
-void draw_prwdy(thread_data_t* thread_data, WINDOW* win) {
+void draw_prwdy(thread_data_t* thread_data, WINDOW* win, char* buffer) {
    int xmax = 0xDEADC0DE;
    int ymax = 0xDEADC0DE;
+   int nummessages = thread_data->message_count[QUE_RECEIVE];
+   int y = 0xDEADC0DE;
    getmaxyx(win, ymax, xmax);
+   y = ymax-nummessages-3;
+   
+   werase(win);
+   
+   message_node_t* node = thread_data->message_que[QUE_RECEIVE];
+   while(node && nummessages > 0) {
+      mvwprintw(win, y, 1, "%s", node->message);
+      node = node->next;
+      nummessages--;
+      
+      y++;
+      if(y > ymax-3) {
+         break;
+      }
+   }
    
    border('|', '|', '-', '-', '/', '\\', '\\', '/');
-   mvgetch(ymax-3, 1);
-   hline('-', xmax-2);
-   mvgetch(ymax-2, 2);
+   mvwhline(win, ymax-3, 1, '-', xmax-2);
+   //mvgetch(ymax-2, 2);
+   mvwprintw(win, ymax-2, 2, buffer);
+   wgetch(win);
 }
 
 /* Handles ctrl+c */
 static void seppuku(int sig) {
+   char buffer[MAX_DATA_SIZE];
+
    if(thread_data.running == 0) {
-      printf("Whoever is out of patience is out of possession of his soul.\n");
-      printf("\t- Francis Bacon\n");
+      snprintf(buffer, MAX_DATA_SIZE, "Whoever is out of patience is out of possession of his soul.");
+      logmsg(&thread_data, buffer, stdout);
+      snprintf(buffer, MAX_DATA_SIZE, "\t- Francis Bacon");
+      logmsg(&thread_data, buffer, stdout);
    } else {
       thread_data.running = 0;
-      printf("Death-threat recived, Suiciding!\n");
+      snprintf(buffer, MAX_DATA_SIZE, "Death-threat recived, Suiciding!");
+      logmsg(&thread_data, buffer, stdout);
    }
 }
