@@ -119,7 +119,7 @@ void message_apocalypse(thread_data_t* thread_data, int que) {
    message_node_t* node = thread_data->message_que[que];
    message_node_t* prev = NULL;
    while(node) {
-      //free(node->message);
+      free(node->message);
       prev = node;
       node = node->next;
       free(prev);
@@ -183,8 +183,8 @@ int main(int argc, char* argv[]) {
          case '?': 
             snprintf(buffer, MAX_DATA_SIZE, "%s: Thats not right... try again...", argv[0]);
             logmsg(&thread_data, buffer, stderr);
-            break;
             exit(EXIT_FAILURE);
+            break;
       }
    }
    
@@ -293,8 +293,8 @@ int sendMessage(char* message, thread_data_t* thread_data) {
    snprintf(buffer, MAX_DATA_SIZE-1, "<%s> %s", thread_data->username, message);
    if(!sendRaw(buffer, thread_data)) {
       return EXIT_FAILURE;
-   }  
-
+   }
+   
    return EXIT_SUCCESS;
 }
 
@@ -309,9 +309,6 @@ void* msg_send(void *arg) {
    sendRaw(buffer, thread_data);
    
    while(thread_data->running) {
-      //add_message(thread_data, QUE_SEND, "Be amazed! For I am sending continuous messages!");
-      //add_message(thread_data, QUE_SEND, "This is the glorious 2nd message!");
-      //sendMessage("Be amazed! For I am sending continuous messages!", thread_data);
       if(thread_data->message_count[QUE_SEND] > 0) {
          node=thread_data->message_que[QUE_SEND];
          while(node != NULL) {
@@ -375,7 +372,6 @@ void* prwdy(void *arg) {
    nonl();
    cbreak();
    nodelay(win, 1);
-   //halfdelay(3);
    
    if(can_change_color()) {
       start_color();
@@ -449,7 +445,6 @@ void draw_prwdy(thread_data_t* thread_data, WINDOW* win, char* buffer) {
    
    border('|', '|', '-', '-', '/', '\\', '\\', '/');
    mvwhline(win, ymax-3, 1, '-', xmax-2);
-   //mvgetch(ymax-2, 2);
    mvwprintw(win, ymax-2, 2, buffer);
    wgetch(win);
 }
