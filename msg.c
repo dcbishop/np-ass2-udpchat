@@ -42,6 +42,7 @@ typedef struct thread_data_s {
    message_node_t* message_last[2];
    int message_count[2];
    int new_messages;
+   int priv_port;
 } thread_data_t;
 static thread_data_t thread_data;
 
@@ -351,6 +352,7 @@ void* msg_send(void *arg) {
    return (void*)EXIT_SUCCESS;
 }
 
+#define MSG_WHOIS "whois "
 /* The reciving thread */
 void* msg_recv(void *arg) {
    thread_data_t* thread_data;
@@ -358,6 +360,7 @@ void* msg_recv(void *arg) {
    
    int bytes = 0xDEADC0DE;
    char buffer[MAX_DATA_SIZE];
+   char message[MAX_DATA_SIZE];
   
    while(thread_data->running) {
       bytes = recvfrom(thread_data->sockfd, buffer, MAX_DATA_SIZE-1, 0, NULL, 0);
@@ -366,15 +369,40 @@ void* msg_recv(void *arg) {
          thread_data->running = 0;
          return (void*)EXIT_FAILURE;
       }
-      
       buffer[bytes] = '\0';
-
-      add_message(thread_data, QUE_RECEIVE, buffer);
+      
+      /* Handle whois requests */
+      if(strncmp(buffer, MSG_WHOIS, strlen(MSG_WHOIS)) == 0) {
+         char* namestart = buffer+strlen(MSG_WHOIS);
+         if(( // Check the name is correct
+            strncmp(namestart, thread_data->username, strlen(namestart)-1
+         ) == 0) && strlen(namestart)-1 == strlen(thread_data->username)) {
+            
+            snprintf(message, MAX_DATA_SIZE, "%s@%s:%d", 
+               thread_data->username, thread_data->hostname, thread_data->priv_port);
+               
+            sendRaw(message, thread_data);
+         }
+         
+      } else {
+         add_message(thread_data, QUE_RECEIVE, buffer);
+      }
    }
    
    snprintf(buffer, MAX_DATA_SIZE, "Recv thread, self-terminating...");
    logmsg(thread_data, buffer, stdout);
    return (void*)EXIT_SUCCESS;
+}
+
+/* Sends a private message */
+int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
+   if(name == NULL || message == NULL) {
+      return EXIT_FAILURE;
+   }
+
+   logmsg(thread_data, message, stdout);
+   
+   return EXIT_SUCCESS;
 }
 
 /* The ncurses thread */
@@ -387,6 +415,11 @@ void* prwdy(void *arg) {
    WINDOW* win = NULL;
    int ymax = LINES;
    int xmax = COLS;
+   
+   /* For private messages */
+   char name[MAX_DATA_SIZE];
+   char* message = '\0';
+   char* name_start = NULL;
    
    if(!(win = initscr())) {
       thread_data->running = 0;
@@ -427,7 +460,31 @@ void* prwdy(void *arg) {
       
       while((c = getch()) != ERR) {
          if(c == 13 || c == KEY_ENTER || chnum > MAX_DATA_SIZE-1) {
-            add_message(thread_data, QUE_SEND, buffer);
+            if(buffer[0] == '/') {
+               if(strncmp(buffer, "/msg", 4)) {
+                  add_message(thread_data, QUE_RECEIVE, "Bad command.");
+               } else {
+                  name_start = strchr(buffer, ' ')+1;
+                  
+                  if(name_start) {
+                     message = strchr(name_start, ' ');
+                  }
+                  
+                  if(message) {
+                     strncpy(name, name_start, message - name_start+1);
+                  }
+                  
+                  if(name == NULL || message == NULL) {
+                     add_message(thread_data, QUE_RECEIVE, "Your syntax is in error.");
+                  } else {
+                     message++;
+                     priv_mesg(thread_data, name, message);
+                  }
+                  message = NULL;
+               }
+            } else {
+               add_message(thread_data, QUE_SEND, buffer);
+            }
             chnum = 0;
             draw_prwdy(thread_data, win, buffer);
          } else if(c == KEY_BACKSPACE ) {
