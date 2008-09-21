@@ -12,6 +12,7 @@
 #include <ncurses.h> /* For the prettyness */
 #include <curses.h>
 #include <signal.h>
+#include <getopt.h>
 
 #define DEFAULT_NAME "Sgt. Fury"
 #define DEFAULT_PORT 12345
@@ -164,8 +165,18 @@ int main(int argc, char* argv[]) {
    
    thread_data.username[0] = '\0';
   
+   static struct option long_options[] =
+   {
+      {"rflag",     no_argument,       0, 'r'},
+      {"username",  required_argument, 0, 'u'},
+      {"mcast_addr",  required_argument, 0, 'm'},
+      {"port",  required_argument, 0, 'p'},
+      {0, 0, 0, 0}
+   };
+   int option_index;
+  
    int name = 0xDEADC0DE;
-   while ((name = getopt(argc, argv, "u:r")) != -1) {
+   while ((name = getopt_long(argc, argv, "u:m:p:r", long_options, &option_index)) != -1) {
       switch(name) {
          case 'u':
             strncpy(thread_data.username, optarg, MAX_DATA_SIZE);
@@ -213,10 +224,10 @@ int main(int argc, char* argv[]) {
    memset(&my_addr, 0, sizeof(my_addr));
    my_addr.sin_family = AF_INET;
    my_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-   my_addr.sin_port = htons(DEFAULT_PORT);
+   my_addr.sin_port = htons(port);
 
    their_addr.sin_family = AF_INET;
-   their_addr.sin_port = htons(DEFAULT_PORT);
+   their_addr.sin_port = htons(port);
    inet_aton(address, &their_addr.sin_addr);
    memset(their_addr.sin_zero, '\0', sizeof their_addr.sin_zero);
    thread_data.their_addr = &their_addr;
@@ -361,6 +372,8 @@ void* prwdy(void *arg) {
    int chnum = 0;
    char buffer[MAX_DATA_SIZE] = {'\0'};
    WINDOW* win = NULL;
+   int ymax = LINES;
+   int xmax = COLS;
    
    if(!(win = initscr())) {
       thread_data->running = 0;
@@ -372,6 +385,7 @@ void* prwdy(void *arg) {
    nonl();
    cbreak();
    nodelay(win, 1);
+   keypad(win, 1);
    
    if(can_change_color()) {
       start_color();
@@ -388,27 +402,36 @@ void* prwdy(void *arg) {
    
    draw_prwdy(thread_data, win, buffer);
    while(thread_data->running) {
+      if(thread_data->new_messages || 
+         (COLS != xmax) || 
+         (LINES != ymax))
+      {
+         thread_data->new_messages = 0;
+         draw_prwdy(thread_data, win, buffer);
+         ymax = LINES;
+         xmax = COLS;
+      }
+      
       while((c = getch()) != ERR) {
-         if(c == 13 || chnum > MAX_DATA_SIZE-1) {
+         if(c == 13 || c == KEY_ENTER || chnum > MAX_DATA_SIZE-1) {
             add_message(thread_data, QUE_SEND, buffer);
             chnum = 0;
             draw_prwdy(thread_data, win, buffer);
-         } else if(c == 127 ) {
+         } else if(c == KEY_BACKSPACE ) {
             buffer[chnum]='\0';
             if(chnum > 0) {
                chnum--;
                buffer[chnum]='\0';
             }
             draw_prwdy(thread_data, win, buffer);
+         } else if(c == KEY_RESIZE) {
+            draw_prwdy(thread_data, win, buffer);
+            refresh();
          } else {
             buffer[chnum] = c;
             chnum++;
          }
          buffer[chnum] = '\0';
-      }
-      if(thread_data->new_messages) {
-         thread_data->new_messages = 0;
-         draw_prwdy(thread_data, win, buffer);
       }
    }
    
@@ -422,12 +445,9 @@ void* prwdy(void *arg) {
 
 /* Draws the ncurses interface */
 void draw_prwdy(thread_data_t* thread_data, WINDOW* win, char* buffer) {
-   int xmax = 0xDEADC0DE;
-   int ymax = 0xDEADC0DE;
    int nummessages = thread_data->message_count[QUE_RECEIVE];
    int y = 0xDEADC0DE;
-   getmaxyx(win, ymax, xmax);
-   y = ymax-nummessages-3;
+   y = LINES-nummessages-3;
    
    werase(win);
    
@@ -438,15 +458,16 @@ void draw_prwdy(thread_data_t* thread_data, WINDOW* win, char* buffer) {
       nummessages--;
       
       y++;
-      if(y > ymax-3) {
+      if(y > LINES-3) {
          break;
       }
    }
    
    border('|', '|', '-', '-', '/', '\\', '\\', '/');
-   mvwhline(win, ymax-3, 1, '-', xmax-2);
-   mvwprintw(win, ymax-2, 2, buffer);
+   mvwhline(win, LINES-3, 1, '-', COLS-2);
+   mvwprintw(win, LINES-2, 2, buffer);
    wgetch(win);
+   refresh();
 }
 
 /* Handles ctrl+c */
