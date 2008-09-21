@@ -135,6 +135,13 @@ void logmsg(thread_data_t* thread_data, char* message, FILE* pipe) {
    fprintf(pipe, "%s\n", message);   
 }
 
+void usage(char* name) {
+   printf("Usage: %s [OPTION]\n\n", name);
+   printf("-u, --username set username.\n");
+   printf("-p, --port set port.\n");
+   printf("-m, --mcast_addr set multicast address.\n");
+}
+
 int main(int argc, char* argv[]) {
    const unsigned char ttl = 1;
    const int on = 1;
@@ -168,6 +175,7 @@ int main(int argc, char* argv[]) {
    static struct option long_options[] =
    {
       {"rflag",     no_argument,       0, 'r'},
+      {"help",     no_argument,       0, 'h'},
       {"username",  required_argument, 0, 'u'},
       {"mcast_addr",  required_argument, 0, 'm'},
       {"port",  required_argument, 0, 'p'},
@@ -176,7 +184,7 @@ int main(int argc, char* argv[]) {
    int option_index;
   
    int name = 0xDEADC0DE;
-   while ((name = getopt_long(argc, argv, "u:m:p:r", long_options, &option_index)) != -1) {
+   while ((name = getopt_long(argc, argv, "u:m:p:rh", long_options, &option_index)) != -1) {
       switch(name) {
          case 'u':
             strncpy(thread_data.username, optarg, MAX_DATA_SIZE);
@@ -190,6 +198,10 @@ int main(int argc, char* argv[]) {
             break;
          case 'p':
             port = atoi(optarg);
+            break;
+         case 'h':
+            usage(argv[0]);
+            exit(EXIT_SUCCESS);
             break;
          case '?': 
             snprintf(buffer, MAX_DATA_SIZE, "%s: Thats not right... try again...", argv[0]);
