@@ -18,26 +18,61 @@
 #define DEFAULT_ADDRESS "225.0.0.1"
 #define MAX_DATA_SIZE 1024
 
+#define QUE_SEND 0
+#define QUE_RECEIVE 1
+
 #ifndef MAXHOSTNAMELEN
 #define MAXHOSTNAMELEN 255
 #endif
 
-struct message_node_s {
+typedef struct message_node_s {
    char* message;
    struct message_node_s* next;
-};
+   struct message_node_s* prev;
+} message_node_t;
 
-/*struct message_node_s* add_message(message_node_s** head_node, char* message) {
-   message_node* mn = *head_node;
+typedef struct thread_data_s {
+   int running;
+   int sockfd;
+   char username[MAX_DATA_SIZE];
+   char hostname[MAXHOSTNAMELEN];
+   struct sockaddr_in* their_addr;
+   struct message_node_s* message_que[2];
+   int message_count[2];
+} thread_data_t;
+static thread_data_t thread_data;
+
+message_node_t* add_message_actual(message_node_t** head_node, char* message);
+void message_dump(message_node_t* node);
+message_node_t* add_message(thread_data_t* thread_data, int que, char* message);
+int sendRaw(char* message, thread_data_t* thread_data);
+int sendMessage(char* message, thread_data_t* thread_data);
+void* msg_send(void *arg);
+void* msg_recv(void *arg);
+void* prwdy(void *arg);
+void draw_prwdy(thread_data_t* thread_data, WINDOW* win);
+static void seppuku(int sig);
+
+/* Adds a message to the message que, (Doesn't increase counter) */
+message_node_t* add_message_actual(message_node_t** head_node, char* message) {
+   message_node_t* mn = *head_node;
+   message_node_t* prev = NULL;
+   size_t len;
+   
+   len = strlen(message);
+   if(len<1) {
+      return NULL;
+   }
    
    if(!mn) {
-      *head_node = malloc(sizeof(message_node));
-      mc = *head_node;
+      *head_node = malloc(sizeof(message_node_t));
+      mn = *head_node;
    } else {
       while(mn->next) {
          mn = mn->next;
       }
-      mn->next = malloc(sizeof(message_node));
+      mn->next = malloc(sizeof(message_node_t));
+      prev = mn;
       mn=mn->next;
    }
    
@@ -46,28 +81,34 @@ struct message_node_s {
    }
    
    mn->next = NULL;
-}*/
+   mn->prev = prev;
+   mn->message = malloc(len * sizeof(char)+1);
+   strncpy(mn->message, message, len);
+   mn->message[len] = '\0';
+   
+   return mn;
+}
 
-typedef struct thread_data_s {
-   int running;
-   int sockfd;
-   char username[MAX_DATA_SIZE];
-   char hostname[MAXHOSTNAMELEN];
-   struct sockaddr_in* their_addr;
-   struct message_node_s* recieved;
-   int recieved_count;
-   struct message_node_s* sendque;
-   int sendque_count;
-} thread_data_t;
-static thread_data_t thread_data;
+/* Dumps a list of messages for debugging */
+void message_dump(message_node_t* node) {
+   while(node) {
+      printf("DEBUG MESSAGE: %s\n", node->message);
+      node = node->next;
+   }
+   printf("yay!\n");
+}
 
-int sendRaw(char* message, thread_data_t* thread_data);
-int sendMessage(char* message, thread_data_t* thread_data);
-void* msg_send(void *arg);
-void* msg_recv(void *arg);
-void* prwdy(void *arg);
-void draw_prwdy(thread_data_t* thread_data, WINDOW* win);
-static void seppuku(int sig);
+/* Adds a message to the specified que */
+message_node_t* add_message(thread_data_t* thread_data, int que, char* message) {
+   message_node_t* newmessage;
+   newmessage = add_message_actual(&thread_data->message_que[que], message);
+   if(!newmessage) {
+      return NULL;
+   }
+   
+   thread_data->message_count[que]++;
+   return newmessage;
+}
 
 int main(int argc, char* argv[]) {
    const unsigned char ttl = 1;
@@ -97,6 +138,10 @@ int main(int argc, char* argv[]) {
    gethostname(thread_data.hostname, MAXHOSTNAMELEN);
    
    thread_data.username[0] = '\0';
+   
+   add_message(&thread_data, QUE_SEND, "Hello");
+   add_message(&thread_data, QUE_SEND, "Another message");
+   add_message(&thread_data, QUE_SEND, "Yet another message");
    
    int name = 0xDEADC0DE;
    while ((name = getopt(argc, argv, "u:r")) != -1) {
@@ -197,10 +242,12 @@ int main(int argc, char* argv[]) {
    close(sockfd);
    
    printf("Good for you! You reached the end of the program....\n");
+   message_dump(thread_data.message_que[QUE_SEND]);
    
    exit(0);
 }
 
+/* Sends a message without any formatting applied to it */
 int sendRaw(char* message, thread_data_t* thread_data) {
    if(sendto(thread_data->sockfd, message, strlen(message), 0, (struct sockaddr *)thread_data->their_addr, sizeof(*thread_data->their_addr)) < 0) {
       perror("sentto");
@@ -210,6 +257,7 @@ int sendRaw(char* message, thread_data_t* thread_data) {
    return EXIT_SUCCESS;
 }
 
+/* Sends a message with the username attached */
 int sendMessage(char* message, thread_data_t* thread_data) {
    char buffer[MAX_DATA_SIZE];
    snprintf(buffer, MAX_DATA_SIZE-1, "<%s> %s", thread_data->username, message);
@@ -220,6 +268,7 @@ int sendMessage(char* message, thread_data_t* thread_data) {
    return EXIT_SUCCESS;
 }
 
+/* The sending thread */
 void* msg_send(void *arg) {
    thread_data_t* thread_data;
    thread_data = (thread_data_t*)arg;
@@ -240,6 +289,7 @@ void* msg_send(void *arg) {
    return (void*)EXIT_SUCCESS;
 }
 
+/* The reciving thread */
 void* msg_recv(void *arg) {
    thread_data_t* thread_data;
    thread_data = (thread_data_t*)arg;
@@ -267,6 +317,7 @@ void* msg_recv(void *arg) {
    return (void*)EXIT_SUCCESS;
 }
 
+/* The ncurses thread */
 void* prwdy(void *arg) {
    thread_data_t* thread_data;
    thread_data = (thread_data_t*)arg; 
@@ -314,6 +365,7 @@ void* prwdy(void *arg) {
    return (void*)EXIT_SUCCESS;
 }
 
+/* Draws the ncurses interface */
 void draw_prwdy(thread_data_t* thread_data, WINDOW* win) {
    int xmax = 0xDEADC0DE;
    int ymax = 0xDEADC0DE;
@@ -325,6 +377,7 @@ void draw_prwdy(thread_data_t* thread_data, WINDOW* win) {
    mvgetch(ymax-2, 2);
 }
 
+/* Handles ctrl+c */
 static void seppuku(int sig) {
    if(thread_data.running == 0) {
       printf("Whoever is out of patience is out of possession of his soul.\n");
