@@ -9,7 +9,7 @@
 #include <unistd.h> /* gethostname(...) */
 #include <netdb.h> /* MAXHOSTNAMELEN (Solaris only)*/
 #include <pthread.h>
-#include <ncurses.h> /* For the prettyness */
+//#include <ncurses.h> /* For the prettyness */
 #include <curses.h>
 #include <signal.h>
 #include <getopt.h>
@@ -494,9 +494,9 @@ void* prwdy(void *arg) {
                buffer[chnum]='\0';
             }
             draw_prwdy(thread_data, win, buffer);
-         } else if(c == KEY_RESIZE) {
-            draw_prwdy(thread_data, win, buffer);
-            refresh();
+         //} else if(c == KEY_RESIZE) {
+         //   draw_prwdy(thread_data, win, buffer);
+         //   refresh();
          } else {
             buffer[chnum] = c;
             chnum++;
