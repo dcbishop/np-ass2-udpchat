@@ -43,6 +43,8 @@ typedef struct thread_data_s {
    int message_count[2];
    int new_messages;
    int priv_port;
+   WINDOW* win;
+   int resize_event;
 } thread_data_t;
 static thread_data_t thread_data;
 
@@ -55,6 +57,7 @@ int sendMessage(char* message, thread_data_t* thread_data);
 void* msg_send(void *arg);
 void* msg_recv(void *arg);
 int priv_mesg(thread_data_t* thread_data, char* name, char* message);
+void prwdy_resize();
 void* prwdy(void *arg);
 void draw_prwdy(thread_data_t* thread_data, WINDOW* win, char* buffer);
 static void seppuku(int sig);
@@ -137,6 +140,7 @@ void logmsg(thread_data_t* thread_data, char* message, FILE* pipe) {
    fprintf(pipe, "%s\n", message);   
 }
 
+/* Prints instructions */
 void usage(char* name) {
    printf("Usage: %s [OPTION]\n\n", name);
    printf("-u, --username set username.\n");
@@ -266,7 +270,8 @@ int main(int argc, char* argv[]) {
    }
    
    (void) signal(SIGINT, seppuku);
-   
+   (void) signal(SIGPIPE, SIG_IGN);
+      
    if(setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (void*)&mreq, sizeof(mreq)) < 0) {
       perror("setsockopt (addmemebership)");
       exit(1);
@@ -306,6 +311,11 @@ int main(int argc, char* argv[]) {
 /* Sends a message without any formatting applied to it */
 int sendRaw(char* message, thread_data_t* thread_data) {
    if(sendto(thread_data->sockfd, message, strlen(message), 0, (struct sockaddr *)thread_data->their_addr, sizeof(*thread_data->their_addr)) < 0) {
+      //if(errno == EPIPE) {
+      	 // ??? 
+      //} else if (errno = EINT) {
+      	 // ???
+      //}
       perror("sentto");
       thread_data->running = 0;
       return EXIT_FAILURE;
@@ -405,6 +415,10 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
    return EXIT_SUCCESS;
 }
 
+void prwdy_resize() {
+   thread_data.resize_event = 1;
+}
+
 /* The ncurses thread */
 void* prwdy(void *arg) {
    thread_data_t* thread_data;
@@ -412,56 +426,59 @@ void* prwdy(void *arg) {
    int c = 0xDEADC0DE;
    int chnum = 0;
    char buffer[MAX_DATA_SIZE] = {'\0'};
-   WINDOW* win = NULL;
-   int ymax = LINES;
-   int xmax = COLS;
    
    /* For private messages */
    char name[MAX_DATA_SIZE];
    char* message = '\0';
    char* name_start = NULL;
-   
-   if(!(win = initscr())) {
-      thread_data->running = 0;
-      snprintf(buffer, MAX_DATA_SIZE, "ERROR initilizing ncurses...");
-      logmsg(thread_data, buffer, stderr);
-      return (void*)EXIT_FAILURE;
-   }
-   
-   nonl();
-   cbreak();
-   nodelay(win, 1);
-   keypad(win, 1);
-   
-   if(can_change_color()) {
-      start_color();
-      
-      init_pair(COLOR_BLACK, COLOR_BLACK, COLOR_BLACK);
-      init_pair(COLOR_GREEN, COLOR_GREEN, COLOR_BLACK);
-      init_pair(COLOR_RED, COLOR_RED, COLOR_BLACK);
-      init_pair(COLOR_CYAN, COLOR_CYAN, COLOR_BLACK);
-      init_pair(COLOR_WHITE, COLOR_WHITE, COLOR_BLACK);
-      init_pair(COLOR_MAGENTA, COLOR_MAGENTA, COLOR_BLACK);
-      init_pair(COLOR_BLUE, COLOR_BLUE, COLOR_BLACK);
-      init_pair(COLOR_YELLOW, COLOR_YELLOW, COLOR_BLACK);
-   }
-   
-   draw_prwdy(thread_data, win, buffer);
+
+   thread_data->resize_event = 1; //Ensure that the screen is initilized on first run
    while(thread_data->running) {
-      if(thread_data->new_messages || 
-         (COLS != xmax) || 
-         (LINES != ymax))
-      {
-         thread_data->new_messages = 0;
-         draw_prwdy(thread_data, win, buffer);
-         ymax = LINES;
-         xmax = COLS;
+   
+      // Initilize the screen on a resize
+      if(thread_data->resize_event) {
+	 thread_data->win = initscr();
+	 if(!thread_data->win) {
+	    thread_data->running = 0;
+      	    snprintf(buffer, MAX_DATA_SIZE, "ERROR initilizing ncurses...");
+      	    logmsg(thread_data, buffer, stderr);
+      	    return (void*)EXIT_FAILURE;
+	 }
+
+	 thread_data->resize_event = 0;
+      	 nonl();
+      	 cbreak();
+      	 nodelay(thread_data->win, 1);
+      	 keypad(thread_data->win, 1);
+	 signal(SIGWINCH, prwdy_resize);
+	 
+	 //if(can_change_color()) { // This fails always on Solaris?
+	    start_color();
+      	    init_pair(COLOR_BLACK, COLOR_BLACK, COLOR_BLACK);
+      	    init_pair(COLOR_GREEN, COLOR_GREEN, COLOR_BLACK);
+            init_pair(COLOR_RED, COLOR_RED, COLOR_BLACK);
+            init_pair(COLOR_CYAN, COLOR_CYAN, COLOR_BLACK);
+      	    init_pair(COLOR_WHITE, COLOR_WHITE, COLOR_BLACK);
+      	    init_pair(COLOR_MAGENTA, COLOR_MAGENTA, COLOR_BLACK);
+      	    init_pair(COLOR_BLUE, COLOR_BLUE, COLOR_BLACK);
+      	    init_pair(COLOR_YELLOW, COLOR_YELLOW, COLOR_BLACK);
+	 //}
+	 
+	 draw_prwdy(thread_data, thread_data->win, buffer);
       }
       
+      // Update the display if there is a new message
+      if(thread_data->new_messages) {
+         thread_data->new_messages = 0;
+         draw_prwdy(thread_data, thread_data->win, buffer);
+      }
+
+      // Read keys
       while((c = getch()) != ERR) {
+      	 // When person pushes enter
          if(c == 13 || c == KEY_ENTER || chnum > MAX_DATA_SIZE-1) {
-            if(buffer[0] == '/') {
-               if(strncmp(buffer, "/msg", 4)) {
+            if(buffer[0] == '/') { // If its a / command
+               if(strncmp(buffer, "/msg", 4)) { // If its a /msg command
                   add_message(thread_data, QUE_RECEIVE, "Bad command.");
                } else {
                   name_start = strchr(buffer, ' ')+1;
@@ -482,26 +499,23 @@ void* prwdy(void *arg) {
                   }
                   message = NULL;
                }
-            } else {
+            } else { // For normal messages
                add_message(thread_data, QUE_SEND, buffer);
             }
-            chnum = 0;
-            draw_prwdy(thread_data, win, buffer);
-         } else if(c == KEY_BACKSPACE ) {
+            chnum = 0; // Reset position to start of buffer
+            draw_prwdy(thread_data, thread_data->win, buffer);
+         } else if(c == KEY_BACKSPACE || c == 127) {
             buffer[chnum]='\0';
             if(chnum > 0) {
                chnum--;
                buffer[chnum]='\0';
             }
-            draw_prwdy(thread_data, win, buffer);
-         //} else if(c == KEY_RESIZE) {
-         //   draw_prwdy(thread_data, win, buffer);
-         //   refresh();
-         } else {
+            draw_prwdy(thread_data, thread_data->win, buffer);
+         } else { //Add new character to buffer
             buffer[chnum] = c;
             chnum++;
          }
-         buffer[chnum] = '\0';
+         buffer[chnum] = '\0'; // Ensure last character is terminator
       }
    }
    
@@ -516,11 +530,15 @@ void* prwdy(void *arg) {
 /* Draws the ncurses interface */
 void draw_prwdy(thread_data_t* thread_data, WINDOW* win, char* buffer) {
    int nummessages = thread_data->message_count[QUE_RECEIVE];
+   int xmax = 0xDEADC0DE;
+   int ymax = 0xDEADC0DE;;
+   getmaxyx(win, ymax,xmax);
    int y = 0xDEADC0DE;
    y = LINES-nummessages-3;
-   
+   win=thread_data->win;
    werase(win);
-   
+
+   attron(COLOR_PAIR(COLOR_WHITE));
    message_node_t* node = thread_data->message_que[QUE_RECEIVE];
    while(node && nummessages > 0) {
       mvwprintw(win, y, 1, "%s", node->message);
@@ -533,11 +551,12 @@ void draw_prwdy(thread_data_t* thread_data, WINDOW* win, char* buffer) {
       }
    }
    
+   attron(COLOR_PAIR(COLOR_YELLOW));
    border('|', '|', '-', '-', '/', '\\', '\\', '/');
    mvwhline(win, LINES-3, 1, '-', COLS-2);
+   attron(COLOR_PAIR(COLOR_GREEN));
    mvwprintw(win, LINES-2, 2, buffer);
    wgetch(win);
-   refresh();
 }
 
 /* Handles ctrl+c */
