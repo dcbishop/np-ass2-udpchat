@@ -269,16 +269,16 @@ int main(int argc, char* argv[]) {
       perror("setsockopt (IP_MULTICAST_TTL)");
       exit(EXIT_FAILURE);
    }
+   if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0 ) {
+      perror("setsockopt (SO_REUSEADDR)");
+      exit(EXIT_FAILURE);
+   }
    if(bind(sockfd, (struct sockaddr*) &my_addr, sizeof(my_addr)) < 0) {
       perror("bind");
       exit(EXIT_FAILURE);
    }
    if(setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (void*)&mreq, sizeof(mreq)) < 0) {
       perror("setsockopt (IP_ADD_MEMBERSHIP)");
-      exit(EXIT_FAILURE);
-   }
-   if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0 ) {
-      perror("setsockopt (SO_REUSEADDR)");
       exit(EXIT_FAILURE);
    }
    
@@ -532,11 +532,14 @@ void* msg_recv_priv_recieved(void *arg) {
 
 /* Sends a private message */
 int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
+   char final_message[MAX_DATA_SIZE];
+   
    if(name == NULL || message == NULL) {
       return EXIT_FAILURE;
    }
-
-   logmsg(thread_data, message, stdout);
+   
+   snprintf(final_message, MAX_DATA_SIZE-1, "*%s* %s", thread_data->username, message);
+   logmsg(thread_data, final_message, stdout);
    
    return EXIT_SUCCESS;
 }
@@ -601,23 +604,27 @@ void* prwdy(void *arg) {
          thread_data->new_messages = 0;
          pthread_mutex_unlock(&thread_data->mp); // Unlock the mutex
          draw_prwdy(thread_data, win, buffer);
+      } else {
+         pthread_mutex_unlock(&thread_data->mp); // Unlock the mutex
       }
-      pthread_mutex_unlock(&thread_data->mp); // Unlock the mutex
       
       // Read keys
       while((c = getch()) != ERR) {
          // When person pushes enter
          if(c == 13 || c == KEY_ENTER || chnum > MAX_DATA_SIZE-1) {
+            if(buffer[0] == '\0') {
+               draw_prwdy(thread_data, win, buffer);
+               continue;
+            }
+            
             if(buffer[0] == '/') { // If its a / command
-               if(strncmp(buffer, "/msg", 4)) { // If its a /msg command
+               if(strncmp(buffer, "/msg ", 5)) { // If its a /msg command
                   add_message(thread_data, QUE_RECEIVE, "Bad command.");
                } else {
                   name_start = strchr(buffer, ' ')+1;
-                  
                   if(name_start) {
                      message = strchr(name_start, ' ');
                   }
-                  
                   if(message) {
                      strncpy(name, name_start, message - name_start+1);
                   }
@@ -625,9 +632,12 @@ void* prwdy(void *arg) {
                   if(name == NULL || message == NULL) {
                      add_message(thread_data, QUE_RECEIVE, "Your syntax is in error.");
                   } else {
-                     message++;
-                     priv_mesg(thread_data, name, message);
+                     //add_message(thread_data, QUE_RECEIVE, "DEBUG TEST.");
+                     //message++;
+                     priv_mesg(thread_data, name, message+1);
                   }
+                  pthread_mutex_unlock(&thread_data->mp); // Unlock the mutex
+                  draw_prwdy(thread_data, win, buffer);                  
                   message = NULL;
                }
             } else { // For normal messages
@@ -668,8 +678,10 @@ void draw_prwdy(thread_data_t* thread_data, WINDOW* win, char* buffer) {
    y = LINES-nummessages-3;
 
    attron(COLOR_PAIR(COLOR_WHITE));
-   werase(win);
 
+   werase(win);
+   wrefresh(win);
+   
    pthread_mutex_lock(&thread_data->mp); // Lock the mutex
    message_node_t* node = thread_data->message_que[QUE_RECEIVE];
    while(node && nummessages > 0) {
