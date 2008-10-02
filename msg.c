@@ -253,19 +253,19 @@ int main(int argc, char* argv[]) {
    sockfd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
    if(sockfd < 0) {
       perror("socket");
-      exit(1);
+      exit(EXIT_FAILURE);
    }
    if(setsockopt(sockfd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)) < 0) {
       perror("setsockopt (ttl)");
-      exit(1);
+      exit(EXIT_FAILURE);
    }
    if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0 ) {
       perror("setsockopt (reuseaddr)");
-      exit(1);
+      exit(EXIT_FAILURE);
    }
    if(bind(sockfd, (struct sockaddr*) &my_addr, sizeof(my_addr)) < 0) {
       perror("bind");
-      exit(1);
+      exit(EXIT_FAILURE);
    }
    
    (void) signal(SIGINT, seppuku);
@@ -274,7 +274,7 @@ int main(int argc, char* argv[]) {
       
    if(setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (void*)&mreq, sizeof(mreq)) < 0) {
       perror("setsockopt (addmemebership)");
-      exit(1);
+      exit(EXIT_FAILURE);
    }
    
    thread_data.sockfd = sockfd;
@@ -282,19 +282,19 @@ int main(int argc, char* argv[]) {
    msg_send_result = pthread_create(&msg_send_tid, NULL, msg_send, (void*)&thread_data);
    if(msg_send_result != 0) {
       perror("pthread_create (send)");
-      exit(1);
+      exit(EXIT_FAILURE);
    }
 
    msg_recv_result = pthread_create(&msg_recv_tid, NULL, msg_recv, (void*)&thread_data);
    if(msg_recv_result != 0) {
       perror("pthread_create (recv)");
-      exit(1);
+      exit(EXIT_FAILURE);
    }
    
    prwdy_result = pthread_create(&prwdy_tid, NULL, prwdy, (void*)&thread_data);
    if(prwdy_result != 0) {
       perror("pthread_create (prwdy)");
-      exit(1);
+      exit(EXIT_FAILURE);
    }
 
    pthread_detach(msg_recv_tid);
@@ -305,7 +305,7 @@ int main(int argc, char* argv[]) {
    
    printf("Good for you! You reached the end of the program....\n");
    
-   exit(0);
+   exit(EXIT_SUCCESS);
 }
 
 /* Sends a message without any formatting applied to it */
