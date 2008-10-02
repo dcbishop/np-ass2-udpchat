@@ -436,37 +436,37 @@ void* prwdy(void *arg) {
    thread_data->resize_event = 1; //Ensure that the screen is initilized on first run
    while(thread_data->running) {
    
-   // Initilize the screen on a resize
-   if(thread_data->resize_event) {
-      endwin();
-      win = initscr();
-      if(!win) {
-         thread_data->running = 0;
-         snprintf(buffer, MAX_DATA_SIZE, "ERROR initilizing ncurses...");
-         logmsg(thread_data, buffer, stderr);
-         return (void*)EXIT_FAILURE;
-      }
+      // Initilize the screen on a resize
+      if(thread_data->resize_event) {
+         endwin();
+         win = initscr();
+         if(!win) {
+            thread_data->running = 0;
+            snprintf(buffer, MAX_DATA_SIZE, "ERROR initilizing ncurses...");
+            logmsg(thread_data, buffer, stderr);
+            return (void*)EXIT_FAILURE;
+         }
 
-      thread_data->resize_event = 0;
-      nonl();
-      cbreak();
-      nodelay(win, 1);
-      keypad(win, 1);
- 
-      //if(can_change_color()) { // This fails always on Solaris?
-         start_color();
-         init_pair(COLOR_BLACK, COLOR_BLACK, COLOR_BLACK);
-         init_pair(COLOR_GREEN, COLOR_GREEN, COLOR_BLACK);
-         init_pair(COLOR_RED, COLOR_RED, COLOR_BLACK);
-         init_pair(COLOR_CYAN, COLOR_CYAN, COLOR_BLACK);
-         init_pair(COLOR_WHITE, COLOR_WHITE, COLOR_BLACK);
-         init_pair(COLOR_MAGENTA, COLOR_MAGENTA, COLOR_BLACK);
-         init_pair(COLOR_BLUE, COLOR_BLUE, COLOR_BLACK);
-         init_pair(COLOR_YELLOW, COLOR_YELLOW, COLOR_BLACK);
-      //}
- 
-      draw_prwdy(thread_data, win, buffer);
-   }
+         thread_data->resize_event = 0;
+         nonl();
+         cbreak();
+         nodelay(win, 1);
+         keypad(win, 1);
+    
+         //if(can_change_color()) { // This fails always on Solaris?
+            start_color();
+            init_pair(COLOR_BLACK, COLOR_BLACK, COLOR_BLACK);
+            init_pair(COLOR_GREEN, COLOR_GREEN, COLOR_BLACK);
+            init_pair(COLOR_RED, COLOR_RED, COLOR_BLACK);
+            init_pair(COLOR_CYAN, COLOR_CYAN, COLOR_BLACK);
+            init_pair(COLOR_WHITE, COLOR_WHITE, COLOR_BLACK);
+            init_pair(COLOR_MAGENTA, COLOR_MAGENTA, COLOR_BLACK);
+            init_pair(COLOR_BLUE, COLOR_BLUE, COLOR_BLACK);
+            init_pair(COLOR_YELLOW, COLOR_YELLOW, COLOR_BLACK);
+         //}
+    
+         draw_prwdy(thread_data, win, buffer);
+      }
       
       // Update the display if there is a new message
       if(thread_data->new_messages) {
