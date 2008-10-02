@@ -42,7 +42,6 @@ typedef struct thread_data_s {
    int message_count[2];
    int new_messages;
    int priv_port;
-   WINDOW* win;
    int resize_event;
 } thread_data_t;
 static thread_data_t thread_data;
@@ -432,15 +431,16 @@ void* prwdy(void *arg) {
    char name[MAX_DATA_SIZE];
    char* message = '\0';
    char* name_start = NULL;
-
+   WINDOW* win = NULL;
+   
    thread_data->resize_event = 1; //Ensure that the screen is initilized on first run
    while(thread_data->running) {
    
    // Initilize the screen on a resize
    if(thread_data->resize_event) {
       endwin();
-      thread_data->win = initscr();
-      if(!thread_data->win) {
+      win = initscr();
+      if(!win) {
          thread_data->running = 0;
          snprintf(buffer, MAX_DATA_SIZE, "ERROR initilizing ncurses...");
          logmsg(thread_data, buffer, stderr);
@@ -450,8 +450,8 @@ void* prwdy(void *arg) {
       thread_data->resize_event = 0;
       nonl();
       cbreak();
-      nodelay(thread_data->win, 1);
-      keypad(thread_data->win, 1);
+      nodelay(win, 1);
+      keypad(win, 1);
  
       //if(can_change_color()) { // This fails always on Solaris?
          start_color();
@@ -465,13 +465,13 @@ void* prwdy(void *arg) {
          init_pair(COLOR_YELLOW, COLOR_YELLOW, COLOR_BLACK);
       //}
  
-      draw_prwdy(thread_data, thread_data->win, buffer);
+      draw_prwdy(thread_data, win, buffer);
    }
       
       // Update the display if there is a new message
       if(thread_data->new_messages) {
          thread_data->new_messages = 0;
-         draw_prwdy(thread_data, thread_data->win, buffer);
+         draw_prwdy(thread_data, win, buffer);
       }
 
       // Read keys
@@ -504,14 +504,14 @@ void* prwdy(void *arg) {
                add_message(thread_data, QUE_SEND, buffer);
             }
             chnum = 0; // Reset position to start of buffer
-            draw_prwdy(thread_data, thread_data->win, buffer);
+            draw_prwdy(thread_data, win, buffer);
          } else if(c == KEY_BACKSPACE || c == 127) {
             buffer[chnum]='\0';
             if(chnum > 0) {
                chnum--;
                buffer[chnum]='\0';
             }
-            draw_prwdy(thread_data, thread_data->win, buffer);
+            draw_prwdy(thread_data, win, buffer);
          } else { //Add new character to buffer
             buffer[chnum] = c;
             chnum++;
@@ -536,7 +536,7 @@ void draw_prwdy(thread_data_t* thread_data, WINDOW* win, char* buffer) {
    getmaxyx(win, ymax,xmax);
    int y = 0xDEADC0DE;
    y = LINES-nummessages-3;
-   win=thread_data->win;
+   win=win;
    werase(win);
 
    attron(COLOR_PAIR(COLOR_WHITE));
