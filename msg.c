@@ -41,8 +41,8 @@ typedef struct thread_data_s {
    char username[MAX_DATA_SIZE];
    char hostname[MAXHOSTNAMELEN];
    struct sockaddr_in* their_addr;
-   pthread_mutex_t mp; // Mutex for meutual exclusion of data structure
-   int priv_port;
+   pthread_mutex_t mp; // The actual mutex
+   uint16_t priv_port;
 
    // Mutex locks needed
    message_node_t* message_que[2];
@@ -482,7 +482,8 @@ void* msg_recv_priv(void *arg) {
 		return (void*)EXIT_FAILURE;	   
 	}
 
- 	snprintf(buffer, MAX_DATA_SIZE, "Private messages on port %d.", ntohs(result.sin_port));
+   thread_data->priv_port = ntohs(result.sin_port);
+ 	snprintf(buffer, MAX_DATA_SIZE, "Private messages on port %d.", thread_data->priv_port);
  	logmsg(thread_data, buffer, stdout);
  	
  	while(thread_data->running) {
