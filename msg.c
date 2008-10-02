@@ -9,8 +9,7 @@
 #include <unistd.h> /* gethostname(...) */
 #include <netdb.h> /* MAXHOSTNAMELEN (Solaris only)*/
 #include <pthread.h>
-//#include <ncurses.h> /* For the prettyness */
-#include <curses.h>
+#include <curses.h> /* For the prettyness */
 #include <signal.h>
 #include <getopt.h>
 
@@ -271,6 +270,7 @@ int main(int argc, char* argv[]) {
    
    (void) signal(SIGINT, seppuku);
    (void) signal(SIGPIPE, SIG_IGN);
+   (void) signal(SIGWINCH, prwdy_resize);
       
    if(setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (void*)&mreq, sizeof(mreq)) < 0) {
       perror("setsockopt (addmemebership)");
@@ -312,9 +312,9 @@ int main(int argc, char* argv[]) {
 int sendRaw(char* message, thread_data_t* thread_data) {
    if(sendto(thread_data->sockfd, message, strlen(message), 0, (struct sockaddr *)thread_data->their_addr, sizeof(*thread_data->their_addr)) < 0) {
       //if(errno == EPIPE) {
-      	 // ??? 
+          // ??? 
       //} else if (errno = EINT) {
-      	 // ???
+          // ???
       //}
       perror("sentto");
       thread_data->running = 0;
@@ -415,6 +415,7 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
    return EXIT_SUCCESS;
 }
 
+/* When a resize signal is recieved */
 void prwdy_resize() {
    thread_data.resize_event = 1;
 }
@@ -435,37 +436,37 @@ void* prwdy(void *arg) {
    thread_data->resize_event = 1; //Ensure that the screen is initilized on first run
    while(thread_data->running) {
    
-      // Initilize the screen on a resize
-      if(thread_data->resize_event) {
-	 thread_data->win = initscr();
-	 if(!thread_data->win) {
-	    thread_data->running = 0;
-      	    snprintf(buffer, MAX_DATA_SIZE, "ERROR initilizing ncurses...");
-      	    logmsg(thread_data, buffer, stderr);
-      	    return (void*)EXIT_FAILURE;
-	 }
-
-	 thread_data->resize_event = 0;
-      	 nonl();
-      	 cbreak();
-      	 nodelay(thread_data->win, 1);
-      	 keypad(thread_data->win, 1);
-	 signal(SIGWINCH, prwdy_resize);
-	 
-	 //if(can_change_color()) { // This fails always on Solaris?
-	    start_color();
-      	    init_pair(COLOR_BLACK, COLOR_BLACK, COLOR_BLACK);
-      	    init_pair(COLOR_GREEN, COLOR_GREEN, COLOR_BLACK);
-            init_pair(COLOR_RED, COLOR_RED, COLOR_BLACK);
-            init_pair(COLOR_CYAN, COLOR_CYAN, COLOR_BLACK);
-      	    init_pair(COLOR_WHITE, COLOR_WHITE, COLOR_BLACK);
-      	    init_pair(COLOR_MAGENTA, COLOR_MAGENTA, COLOR_BLACK);
-      	    init_pair(COLOR_BLUE, COLOR_BLUE, COLOR_BLACK);
-      	    init_pair(COLOR_YELLOW, COLOR_YELLOW, COLOR_BLACK);
-	 //}
-	 
-	 draw_prwdy(thread_data, thread_data->win, buffer);
+   // Initilize the screen on a resize
+   if(thread_data->resize_event) {
+      endwin();
+      thread_data->win = initscr();
+      if(!thread_data->win) {
+         thread_data->running = 0;
+         snprintf(buffer, MAX_DATA_SIZE, "ERROR initilizing ncurses...");
+         logmsg(thread_data, buffer, stderr);
+         return (void*)EXIT_FAILURE;
       }
+
+      thread_data->resize_event = 0;
+      nonl();
+      cbreak();
+      nodelay(thread_data->win, 1);
+      keypad(thread_data->win, 1);
+ 
+      //if(can_change_color()) { // This fails always on Solaris?
+         start_color();
+         init_pair(COLOR_BLACK, COLOR_BLACK, COLOR_BLACK);
+         init_pair(COLOR_GREEN, COLOR_GREEN, COLOR_BLACK);
+         init_pair(COLOR_RED, COLOR_RED, COLOR_BLACK);
+         init_pair(COLOR_CYAN, COLOR_CYAN, COLOR_BLACK);
+         init_pair(COLOR_WHITE, COLOR_WHITE, COLOR_BLACK);
+         init_pair(COLOR_MAGENTA, COLOR_MAGENTA, COLOR_BLACK);
+         init_pair(COLOR_BLUE, COLOR_BLUE, COLOR_BLACK);
+         init_pair(COLOR_YELLOW, COLOR_YELLOW, COLOR_BLACK);
+      //}
+ 
+      draw_prwdy(thread_data, thread_data->win, buffer);
+   }
       
       // Update the display if there is a new message
       if(thread_data->new_messages) {
@@ -475,7 +476,7 @@ void* prwdy(void *arg) {
 
       // Read keys
       while((c = getch()) != ERR) {
-      	 // When person pushes enter
+         // When person pushes enter
          if(c == 13 || c == KEY_ENTER || chnum > MAX_DATA_SIZE-1) {
             if(buffer[0] == '/') { // If its a / command
                if(strncmp(buffer, "/msg", 4)) { // If its a /msg command
