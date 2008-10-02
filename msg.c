@@ -44,7 +44,7 @@ typedef struct thread_data_s {
    pthread_mutex_t mp; // Mutex for meutual exclusion of data structure
    int priv_port;
 
-   // Mutex lockes needed
+   // Mutex locks needed
    message_node_t* message_que[2];
    message_node_t* message_last[2];
    int message_count[2];
@@ -262,29 +262,30 @@ int main(int argc, char* argv[]) {
       exit(EXIT_FAILURE);
    }
    if(setsockopt(sockfd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)) < 0) {
-      perror("setsockopt (ttl)");
-      exit(EXIT_FAILURE);
-   }
-   if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0 ) {
-      perror("setsockopt (reuseaddr)");
+      perror("setsockopt (IP_MULTICAST_TTL)");
       exit(EXIT_FAILURE);
    }
    if(bind(sockfd, (struct sockaddr*) &my_addr, sizeof(my_addr)) < 0) {
       perror("bind");
       exit(EXIT_FAILURE);
    }
-   
-   (void) signal(SIGINT, seppuku);
-   (void) signal(SIGPIPE, SIG_IGN);
-   (void) signal(SIGWINCH, prwdy_resize);
-      
    if(setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (void*)&mreq, sizeof(mreq)) < 0) {
-      perror("setsockopt (addmemebership)");
+      perror("setsockopt (IP_ADD_MEMBERSHIP)");
+      exit(EXIT_FAILURE);
+   }
+   if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0 ) {
+      perror("setsockopt (SO_REUSEADDR)");
       exit(EXIT_FAILURE);
    }
    
    thread_data.sockfd = sockfd;
+
+   // Handle signals
+   (void) signal(SIGINT, seppuku);
+   (void) signal(SIGPIPE, SIG_IGN);
+   (void) signal(SIGWINCH, prwdy_resize);
    
+   // Spawn threads...   
    msg_send_result = pthread_create(&msg_send_tid, NULL, msg_send, (void*)&thread_data);
    if(msg_send_result != 0) {
       perror("pthread_create (send)");
@@ -307,7 +308,19 @@ int main(int argc, char* argv[]) {
    pthread_join(prwdy_tid, NULL);
    pthread_join(msg_send_tid, NULL);
    
+   // Drop membership
+   if(setsockopt(sockfd, IPPROTO_IP, IP_DROP_MEMBERSHIP, (void*)&mreq, sizeof(mreq)) < 0) {
+      perror("setsockopt (IP_DROP_MEMBERSHIP)");
+      exit(EXIT_FAILURE);
+   }
+   
+   // Close UDP socket
    close(sockfd);
+   
+   //Destroy the mutex
+   if(pthread_mutex_destroy(&thread_data.mp)) {
+      fprintf(stderr, "%s: Error destroying mutex...\n", argv[0]);
+   }
    
    printf("Good for you! You reached the end of the program....\n");
    
@@ -442,7 +455,7 @@ void* prwdy(void *arg) {
    char* name_start = NULL;
    WINDOW* win = NULL;
    
-   thread_data->resize_event = 1; //Ensure that the screen is initilized on first run
+   thread_data->resize_event = 1; // Ensure that the screen is initilized on first run
    while(thread_data->running) {
    
       // Initilize the screen on a resize
