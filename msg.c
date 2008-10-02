@@ -32,20 +32,27 @@ typedef struct message_node_s {
 } message_node_t;
 
 typedef struct thread_data_s {
+   // Non-critial, don't care about mutex for this
    int running;
+   int resize_event;
+
+   // Read only after set, no mutex needed
    int sockfd;
    char username[MAX_DATA_SIZE];
    char hostname[MAXHOSTNAMELEN];
    struct sockaddr_in* their_addr;
+   pthread_mutex_t mp; // Mutex for meutual exclusion of data structure
+   int priv_port;
+
+   // Mutex lockes needed
    message_node_t* message_que[2];
    message_node_t* message_last[2];
    int message_count[2];
    int new_messages;
-   int priv_port;
-   int resize_event;
 } thread_data_t;
 static thread_data_t thread_data;
 
+// Function prototypes
 message_node_t* add_message_actual(message_node_t** head_node, char* message);
 void message_dump(message_node_t* node);
 message_node_t* add_message(thread_data_t* thread_data, int que, char* message);
@@ -60,7 +67,7 @@ void* prwdy(void *arg);
 void draw_prwdy(thread_data_t* thread_data, WINDOW* win, char* buffer);
 static void seppuku(int sig);
 
-/* Adds a message to the message que, (Doesn't increase counter) */
+/* Adds a message to the message que, (No counter increase) [WARNING: No mutex locking] */
 message_node_t* add_message_actual(message_node_t** head_node, char* message) {
    message_node_t* mn = *head_node;
    message_node_t* prev = NULL;
@@ -96,17 +103,11 @@ message_node_t* add_message_actual(message_node_t** head_node, char* message) {
    return mn;
 }
 
-/* Dumps a list of messages for debugging */
-void message_dump(message_node_t* node) {
-   while(node) {
-      printf("DEBUG MESSAGE: %s\n", node->message);
-      node = node->next;
-   }
-}
-
 /* Adds a message to the specified que */
 message_node_t* add_message(thread_data_t* thread_data, int que, char* message) {
    message_node_t* newmessage;
+   
+   pthread_mutex_lock(&thread_data->mp); // Lock the mutex
    newmessage = add_message_actual(&thread_data->message_que[que], message);
    if(!newmessage) {
       return NULL;
@@ -115,10 +116,11 @@ message_node_t* add_message(thread_data_t* thread_data, int que, char* message) 
    thread_data->message_count[que]++;
    thread_data->message_last[que] = newmessage;
    thread_data->new_messages=1;
+   pthread_mutex_unlock(&thread_data->mp); // Unlock the mutex
    return newmessage;
 }
 
-/* Frees all messages in a que */
+/* Frees all messages in a que [WARNING: No mutex locking] */
 void message_apocalypse(thread_data_t* thread_data, int que) {
    message_node_t* node = thread_data->message_que[que];
    message_node_t* prev = NULL;
@@ -168,6 +170,11 @@ int main(int argc, char* argv[]) {
    int msg_recv_result = 0xDEADC0DE;
    int prwdy_result = 0xDEADC0DE;
    
+   if(pthread_mutex_init(&thread_data.mp, NULL)) {
+      perror("pthread_mutex_init");
+      exit(EXIT_FAILURE);
+   }
+
    struct ip_mreq mreq;
    inet_aton(DEFAULT_ADDRESS, &mreq.imr_multiaddr);
    mreq.imr_interface.s_addr = INADDR_ANY;
@@ -344,6 +351,7 @@ void* msg_send(void *arg) {
    sendRaw(buffer, thread_data);
    
    while(thread_data->running) {
+      pthread_mutex_lock(&thread_data->mp); // Lock the mutex
       if(thread_data->message_count[QUE_SEND] > 0) {
          node=thread_data->message_que[QUE_SEND];
          while(node != NULL) {
@@ -352,6 +360,7 @@ void* msg_send(void *arg) {
          }
          message_apocalypse(thread_data, QUE_SEND);
       }
+      pthread_mutex_unlock(&thread_data->mp); // Lock the mutex
    }
    
    snprintf(buffer, MAX_DATA_SIZE-1, "<%s@%s leaving chat group>", thread_data->username, thread_data->hostname);   
@@ -469,11 +478,14 @@ void* prwdy(void *arg) {
       }
       
       // Update the display if there is a new message
+      pthread_mutex_lock(&thread_data->mp); // Lock the mutex
       if(thread_data->new_messages) {
          thread_data->new_messages = 0;
+         pthread_mutex_unlock(&thread_data->mp); // Unlock the mutex
          draw_prwdy(thread_data, win, buffer);
       }
-
+      pthread_mutex_unlock(&thread_data->mp); // Unlock the mutex
+      
       // Read keys
       while((c = getch()) != ERR) {
          // When person pushes enter
@@ -536,10 +548,11 @@ void draw_prwdy(thread_data_t* thread_data, WINDOW* win, char* buffer) {
    getmaxyx(win, ymax,xmax);
    int y = 0xDEADC0DE;
    y = LINES-nummessages-3;
-   win=win;
-   werase(win);
 
    attron(COLOR_PAIR(COLOR_WHITE));
+   werase(win);
+
+   pthread_mutex_lock(&thread_data->mp); // Lock the mutex
    message_node_t* node = thread_data->message_que[QUE_RECEIVE];
    while(node && nummessages > 0) {
       mvwprintw(win, y, 1, "%s", node->message);
@@ -551,6 +564,7 @@ void draw_prwdy(thread_data_t* thread_data, WINDOW* win, char* buffer) {
          break;
       }
    }
+   pthread_mutex_unlock(&thread_data->mp); // Unlock the mutex
    
    attron(COLOR_PAIR(COLOR_YELLOW));
    border('|', '|', '-', '-', '/', '\\', '\\', '/');
