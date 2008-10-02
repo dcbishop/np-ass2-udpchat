@@ -62,6 +62,7 @@ int sendMessage(char* message, thread_data_t* thread_data);
 void* msg_send(void *arg);
 void* msg_recv(void *arg);
 void* msg_recv_priv(void *arg);
+void* msg_recv_priv_recieved(void *arg);
 int priv_mesg(thread_data_t* thread_data, char* name, char* message);
 void prwdy_resize();
 void* prwdy(void *arg);
@@ -441,45 +442,90 @@ void* msg_recv_priv(void *arg) {
    thread_data = (thread_data_t*)arg;
 
    char buffer[MAX_DATA_SIZE];
-   
+
+	pthread_t thread_id;   
 	int sockfd = 0xDEADC0DE;
-	int newfd = 0xDEADC0DE;
+	int fd_new = 0xDEADC0DE;
+	int error = 0;
    const int on = 1;
+   int pthread_result = 0xDEADC0DE;
 	struct sockaddr_in result;
 	socklen_t result_size = sizeof(result);
 
+   
 	sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if(sockfd == -1) {
 	   logmsg(thread_data, "Private message socket() error...", stderr);
 		thread_data->running = 0;
-		perror("socket");
+		perror("[priv_msg] socket");
 		return (void*)EXIT_FAILURE;
 	}	
    
    if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0) {
-	   logmsg(thread_data, "Private message setsockopt SO_REUSEADDR error...", stderr);
-		perror("setsockopt");
+	   logmsg(thread_data, "Private message setsockopt() SO_REUSEADDR error...", stderr);
+		perror("[priv_msg] setsockopt");
 		thread_data->running = 0;
 		return (void*)EXIT_FAILURE;
 	}
 	
 	if(listen(sockfd, 10) < 0) {
-	   logmsg(thread_data, "Private message listen error...", stderr);
+	   logmsg(thread_data, "Private message listen() error...", stderr);
 	   perror("[priv_msg] listen");
 		thread_data->running = 0;
 		return (void*)EXIT_FAILURE;
 	}
 	
 	if(getsockname(sockfd, (struct sockaddr*)&result, &result_size) < 0) {
-	   logmsg(thread_data, "priv_msg: getsockname error...", stderr);
+	   logmsg(thread_data, "priv_msg: getsockname() error...", stderr);
 	   perror("[priv_msg] listen");
 		thread_data->running = 0;
 		return (void*)EXIT_FAILURE;	   
 	}
 
  	snprintf(buffer, MAX_DATA_SIZE, "Private messages on port %d.", ntohs(result.sin_port));
- 	logmsg(thread_data, buffer, stdout);   
+ 	logmsg(thread_data, buffer, stdout);
+ 	
+ 	while(thread_data->running) {
+ 	   fd_new = accept(sockfd, NULL, NULL);
+ 	   if(fd_new < 0) {
+ 	      logmsg(thread_data, "Private message accept() error...", stdout);
+ 	      perror("[priv_msg] accept");
+ 	      error = 1;
+ 	      break;
+ 	   }
+ 	   
+ 	   pthread_result = pthread_create(&thread_id, NULL, msg_recv_priv_recieved, (void*)fd_new);
+		if (pthread_result != 0) {
+ 	      logmsg(thread_data, "Private message pthread() error...", stdout);
+         perror("[priv_msg] pthread");
+         error = 1;
+         break;
+      }
+      pthread_detach(thread_id);
+      close(fd_new);
+ 	}  
+
+	thread_data->running = 0;   
+   close(sockfd);
+   return (void*)error;
+}
+
+/* For when a private message is recieved */
+void* msg_recv_priv_recieved(void *arg) {
+   int fd_new = (int)arg;
    
+   char buf[MAX_DATA_SIZE];
+   int numbytes;
+   if ((numbytes=recv(fd_new, buf, MAX_DATA_SIZE-1, 0)) == -1) {
+	   perror("[msg_recv_priv_recieved] recv");
+	   close(fd_new);
+      return (void*)EXIT_FAILURE;
+   }
+   
+   buf[numbytes] = '\0';
+   add_message(&thread_data, QUE_RECEIVE, buf);
+   
+   close(fd_new);
    return (void*)EXIT_SUCCESS;
 }
 
