@@ -12,6 +12,7 @@
 #include <curses.h> /* For the prettyness */
 #include <signal.h>
 #include <getopt.h>
+#include <time.h>
 
 #define DEFAULT_NAME "Sgt. Fury"
 #define DEFAULT_PORT 12345
@@ -49,10 +50,16 @@ typedef struct thread_data_s {
    message_node_t* message_last[2];
    int message_count[2];
    int new_messages;
+   
+   char whois_username[MAX_DATA_SIZE];
+   char whois_hostname[MAX_DATA_SIZE];
+   int whois_port;
+   
 } thread_data_t;
 static thread_data_t thread_data;
 
 // Function prototypes
+void nuke_whois(thread_data_t* thread_data);
 message_node_t* add_message_actual(message_node_t** head_node, char* message);
 void message_dump(message_node_t* node);
 message_node_t* add_message(thread_data_t* thread_data, int que, char* message);
@@ -68,6 +75,15 @@ void prwdy_resize();
 void* prwdy(void *arg);
 void draw_prwdy(thread_data_t* thread_data, WINDOW* win, char* buffer);
 static void seppuku(int sig);
+
+/* Clears the whois information */
+void nuke_whois(thread_data_t* thread_data) {
+   pthread_mutex_lock(&thread_data->mp); // Lock the mutex
+   thread_data->whois_username[0]='\0';
+   thread_data->whois_hostname[0]='\0';
+   thread_data->whois_port = 0;
+   pthread_mutex_unlock(&thread_data->mp); // Unlock the mutex
+}
 
 /* Adds a message to the message que, (No counter increase) [WARNING: No mutex locking] */
 message_node_t* add_message_actual(message_node_t** head_node, char* message) {
@@ -162,6 +178,8 @@ int main(int argc, char* argv[]) {
    int port = 0xDEADC0DE;
    
    thread_data.running = 1;
+
+   nuke_whois(&thread_data);
 
    pthread_t msg_send_tid = 0xDEADC0DE;
    pthread_t msg_recv_tid = 0xDEADC0DE;
@@ -372,7 +390,10 @@ void* msg_send(void *arg) {
 
    char buffer[MAX_DATA_SIZE];
    snprintf(buffer, MAX_DATA_SIZE-1, "<%s@%s entered chat group>", thread_data->username, thread_data->hostname);   
-   sendRaw(buffer, thread_data);
+   
+   if(sendRaw(buffer, thread_data) == EXIT_FAILURE) {
+      logmsg(thread_data, "ERROR: Failed to send join message...", stderr);
+   }
    
    while(thread_data->running) {
       pthread_mutex_lock(&thread_data->mp); // Lock the mutex
@@ -388,7 +409,9 @@ void* msg_send(void *arg) {
    }
    
    snprintf(buffer, MAX_DATA_SIZE-1, "<%s@%s leaving chat group>", thread_data->username, thread_data->hostname);   
-   sendRaw(buffer, thread_data);
+   if(sendRaw(buffer, thread_data)) {
+      logmsg(thread_data, "ERROR: Failed to send depart message...", stderr);
+   }
    
    snprintf(buffer, MAX_DATA_SIZE, "Send thread, self-terminating...");
    logmsg(thread_data, buffer, stdout);
@@ -417,17 +440,41 @@ void* msg_recv(void *arg) {
       /* Handle whois requests */
       if(strncmp(buffer, MSG_WHOIS, strlen(MSG_WHOIS)) == 0) {
          char* namestart = buffer+strlen(MSG_WHOIS);
-         if(( // Check the name is correct
-            strncmp(namestart, thread_data->username, strlen(namestart)-1
-         ) == 0) && strlen(namestart)-1 == strlen(thread_data->username)) {
-            
+            snprintf(message, MAX_DATA_SIZE, "DEBUG: Got a whois for '%s' %d %d.", namestart, strlen(namestart), strlen(thread_data->username));
+            logmsg(thread_data, message, stdout);
+         if(( /* Check the name is correct */
+            strncmp(namestart, thread_data->username, strlen(namestart)
+         ) == 0) && strlen(namestart) == strlen(thread_data->username)) {
+            logmsg(thread_data, "DEBUG: for me...", stdout);            
             snprintf(message, MAX_DATA_SIZE, "%s@%s:%d", 
                thread_data->username, thread_data->hostname, thread_data->priv_port);
                
             sendRaw(message, thread_data);
          }         
-      } else {
+      /* Handle a normal message */
+      } else if(buffer[0] == '<') { 
          add_message(thread_data, QUE_RECEIVE, buffer);
+      /* Handle a whois response */
+      } else {
+         char* first = strchr(buffer, '@');
+         char* second = strchr(buffer, ':');
+         char port[MAX_DATA_SIZE];
+         
+         if(first && second) {
+            add_message(thread_data, QUE_RECEIVE, "DEBUG BEGINS whois processing...");
+            //strncpy(thread_data->whois_username, buffer, buffer-first);
+            //strncpy(thread_data->whois_hostname, first, second-first);
+            //strncpy(port, second, strlen(buffer));
+            //thread_data->whois_port = atoi(port);
+            snprintf(buffer, MAX_DATA_SIZE-1, "DEBUG: %s %s %s", thread_data->whois_username,
+                  thread_data->whois_hostname, port);
+            add_message(thread_data, QUE_RECEIVE, buffer);
+            
+         } else {
+            /* Display unknown messages */
+            add_message(thread_data, QUE_RECEIVE, buffer);
+         }
+
       }
    }
    
@@ -532,15 +579,53 @@ void* msg_recv_priv_recieved(void *arg) {
 
 /* Sends a private message */
 int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
+
+   char hostname[MAX_DATA_SIZE] = {'\0'};
+   int port = 0xDEADC0DE;
+   
    char final_message[MAX_DATA_SIZE];
    
    if(name == NULL || message == NULL) {
       return EXIT_FAILURE;
    }
    
-   snprintf(final_message, MAX_DATA_SIZE-1, "*%s* %s", thread_data->username, message);
+   /* Perform a whois request */
+   time_t start_time = time(NULL);
+
+   
+   char whois_message[MAX_DATA_SIZE];
+   snprintf(whois_message, MAX_DATA_SIZE-1, "whois %s", name);
+   sendRaw(whois_message, thread_data);
+   
+   int got_reply = 0;
+
+   nuke_whois(thread_data);
+   while(time(NULL) - start_time < 6) {
+      
+      pthread_mutex_lock(&thread_data->mp); // Lock the mutex
+      if(strcmp(thread_data->whois_username, name) == 0) {
+         got_reply = 1;
+         strncpy(hostname, thread_data->whois_hostname, MAX_DATA_SIZE);
+         port = thread_data->whois_port;
+         break;
+      }
+      pthread_mutex_unlock(&thread_data->mp); // Unlock the mutex
+      
+   }
+   
+   if(!got_reply) {
+      logmsg(thread_data, "ERROR: No whois response...", stderr);
+      return EXIT_FAILURE;
+   }
+   
+   snprintf(final_message, MAX_DATA_SIZE-1, "*%s>%s* %s", thread_data->username, name, message);
    logmsg(thread_data, final_message, stdout);
    
+   snprintf(final_message, MAX_DATA_SIZE-1, "*%s* %s", thread_data->username, message);
+   
+   // Send the message...
+   logmsg(thread_data, "DEBUG: This is the part that sends the message...", stdout);
+
    return EXIT_SUCCESS;
 }
 
@@ -626,19 +711,20 @@ void* prwdy(void *arg) {
                      message = strchr(name_start, ' ');
                   }
                   if(message) {
-                     strncpy(name, name_start, message - name_start+1);
+                     strncpy(name, name_start, message - name_start);
                   }
+                  name[message - name_start] = '\0';
                   
-                  if(name == NULL || message == NULL) {
+                  if(name[0] == '\0' || message == NULL) {
                      add_message(thread_data, QUE_RECEIVE, "Your syntax is in error.");
                   } else {
-                     //add_message(thread_data, QUE_RECEIVE, "DEBUG TEST.");
-                     //message++;
                      priv_mesg(thread_data, name, message+1);
                   }
-                  pthread_mutex_unlock(&thread_data->mp); // Unlock the mutex
+
                   draw_prwdy(thread_data, win, buffer);                  
                   message = NULL;
+                  name[0]='\0';
+                  
                }
             } else { // For normal messages
                add_message(thread_data, QUE_SEND, buffer);
@@ -707,12 +793,21 @@ void draw_prwdy(thread_data_t* thread_data, WINDOW* win, char* buffer) {
 /* Handles ctrl+c */
 static void seppuku(int sig) {
    char buffer[MAX_DATA_SIZE];
-
+   static int deaths = 0;
+   
    if(thread_data.running == 0) {
-      snprintf(buffer, MAX_DATA_SIZE, "Whoever is out of patience is out of possession of his soul.");
-      logmsg(&thread_data, buffer, stdout);
-      snprintf(buffer, MAX_DATA_SIZE, "\t- Francis Bacon");
-      logmsg(&thread_data, buffer, stdout);
+      if(deaths<3) {
+         snprintf(buffer, MAX_DATA_SIZE, "Whoever is out of patience is out of possession of his soul.");
+         logmsg(&thread_data, buffer, stdout);
+         snprintf(buffer, MAX_DATA_SIZE, "\t- Francis Bacon");
+         logmsg(&thread_data, buffer, stdout);
+      } else {
+         snprintf(buffer, MAX_DATA_SIZE, "%s is to instant, dying badly...", thread_data.username);
+         logmsg(&thread_data, buffer, stdout);
+         endwin();
+         exit(EXIT_FAILURE);
+      }
+      deaths++;
    } else {
       thread_data.running = 0;
       snprintf(buffer, MAX_DATA_SIZE, "Death-threat recived, Suiciding!");
