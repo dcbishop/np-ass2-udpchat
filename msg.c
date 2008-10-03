@@ -440,16 +440,15 @@ void* msg_recv(void *arg) {
       /* Handle whois requests */
       if(strncmp(buffer, MSG_WHOIS, strlen(MSG_WHOIS)) == 0) {
          char* namestart = buffer+strlen(MSG_WHOIS);
-            snprintf(message, MAX_DATA_SIZE, "DEBUG: Got a whois for '%s' %d %d.", namestart, strlen(namestart), strlen(thread_data->username));
-            logmsg(thread_data, message, stdout);
-         if(( /* Check the name is correct */
-            strncmp(namestart, thread_data->username, strlen(namestart)
-         ) == 0) && strlen(namestart) == strlen(thread_data->username)) {
-            logmsg(thread_data, "DEBUG: for me...", stdout);            
+
+         /* Check if the request is for this user and respond */
+         if((strncmp(namestart, thread_data->username, strlen(namestart) ) == 0) 
+         && strlen(namestart) == strlen(thread_data->username)) {
+            add_message(thread_data, QUE_RECEIVE, "Recieved a whois request...");
             snprintf(message, MAX_DATA_SIZE, "%s@%s:%d", 
                thread_data->username, thread_data->hostname, thread_data->priv_port);
                
-            sendRaw(message, thread_data);
+            sendRaw(message, thread_data); /* Send a whois response */
          }         
       /* Handle a normal message */
       } else if(buffer[0] == '<') { 
@@ -461,15 +460,10 @@ void* msg_recv(void *arg) {
          char port[MAX_DATA_SIZE];
          
          if(first && second) {
-            add_message(thread_data, QUE_RECEIVE, "DEBUG BEGINS whois processing...");
-            //strncpy(thread_data->whois_username, buffer, buffer-first);
-            //strncpy(thread_data->whois_hostname, first, second-first);
-            //strncpy(port, second, strlen(buffer));
-            //thread_data->whois_port = atoi(port);
-            snprintf(buffer, MAX_DATA_SIZE-1, "DEBUG: %s %s %s", thread_data->whois_username,
-                  thread_data->whois_hostname, port);
-            add_message(thread_data, QUE_RECEIVE, buffer);
-            
+            strncpy(thread_data->whois_username, buffer, first-buffer);
+            strncpy(thread_data->whois_hostname, first+1, second-first-1);
+            strncpy(port, second+1, strlen(buffer));
+            thread_data->whois_port = atoi(port);
          } else {
             /* Display unknown messages */
             add_message(thread_data, QUE_RECEIVE, buffer);
@@ -498,7 +492,6 @@ void* msg_recv_priv(void *arg) {
    int pthread_result = 0xDEADC0DE;
 	struct sockaddr_in result;
 	socklen_t result_size = sizeof(result);
-
    
 	sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if(sockfd == -1) {
@@ -591,41 +584,81 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
    
    /* Perform a whois request */
    time_t start_time = time(NULL);
-
-   
+   nuke_whois(thread_data);
    char whois_message[MAX_DATA_SIZE];
    snprintf(whois_message, MAX_DATA_SIZE-1, "whois %s", name);
    sendRaw(whois_message, thread_data);
    
    int got_reply = 0;
 
-   nuke_whois(thread_data);
-   while(time(NULL) - start_time < 6) {
-      
+   while(time(NULL) - start_time < 6 && !got_reply) {
       pthread_mutex_lock(&thread_data->mp); // Lock the mutex
       if(strcmp(thread_data->whois_username, name) == 0) {
          got_reply = 1;
          strncpy(hostname, thread_data->whois_hostname, MAX_DATA_SIZE);
          port = thread_data->whois_port;
-         break;
       }
       pthread_mutex_unlock(&thread_data->mp); // Unlock the mutex
-      
    }
-   
+         
    if(!got_reply) {
-      logmsg(thread_data, "ERROR: No whois response...", stderr);
+      logmsg(thread_data, "[priv_mesg] ERROR: No whois response...", stderr);
       return EXIT_FAILURE;
    }
    
-   snprintf(final_message, MAX_DATA_SIZE-1, "*%s>%s* %s", thread_data->username, name, message);
+   /* Print the send message */
+   snprintf(final_message, MAX_DATA_SIZE-1, "*%s > %s* %s", thread_data->username, name, message);
    logmsg(thread_data, final_message, stdout);
    
    snprintf(final_message, MAX_DATA_SIZE-1, "*%s* %s", thread_data->username, message);
    
    // Send the message...
-   logmsg(thread_data, "DEBUG: This is the part that sends the message...", stdout);
+   int sockfd = 0xDEADC0DE;
+   int ret = 0xDEADC0DE;
+   struct sockaddr_in server;
+   struct hostent *hptr;
+   ssize_t nbytes;
+   char **ptr = NULL;
 
+   sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+   if(sockfd==-1) {
+      perror("socket");
+      logmsg(thread_data, "[priv_mesg] ERROR: socket() call failed...", stderr);
+      return EXIT_FAILURE;
+   }
+   
+   memset(&server, 0, sizeof(struct sockaddr_in));
+   server.sin_family = AF_INET;
+   server.sin_port = htons(port);
+   
+   if(inet_aton(hostname, &server.sin_addr) < 0) {
+      hptr = gethostbyname(hostname);
+      
+      if(hptr == NULL) {
+         perror("gethostbyname");
+         logmsg(thread_data, "[priv_mesg] ERROR: gethostbyname() failed...", stderr);
+         return EXIT_FAILURE;
+      }
+      ptr = hptr->h_addr_list;
+      memcpy( &server.sin_addr, *ptr, sizeof( struct in_addr ) );
+   }
+   
+   ret = connect( sockfd, (struct sockaddr *)&server, sizeof server );
+   if( ret == -1 ) {
+      perror("connect");
+      logmsg(thread_data, "[priv_mesg] ERROR: connect() failed...", stderr);
+      return EXIT_FAILURE;
+   }
+
+   // TODO: epipe
+   nbytes = write( sockfd, final_message, strlen( final_message ) );
+   if( nbytes == -1 ) {
+      perror("write");
+      close(sockfd);
+      return EXIT_FAILURE;
+   }
+
+   close(sockfd);
    return EXIT_SUCCESS;
 }
 
@@ -713,8 +746,8 @@ void* prwdy(void *arg) {
                   if(message) {
                      strncpy(name, name_start, message - name_start);
                   }
+
                   name[message - name_start] = '\0';
-                  
                   if(name[0] == '\0' || message == NULL) {
                      add_message(thread_data, QUE_RECEIVE, "Your syntax is in error.");
                   } else {
