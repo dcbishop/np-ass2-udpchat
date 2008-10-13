@@ -13,6 +13,9 @@
 #include <signal.h>
 #include <getopt.h>
 #include <time.h>
+#include <errno.h>
+extern int errno;
+
 
 #define DEFAULT_NAME "Sgt. Fury"
 #define DEFAULT_PORT 12345
@@ -158,6 +161,21 @@ void logmsg(thread_data_t* thread_data, char* message, FILE* pipe) {
    fprintf(pipe, "%s\n", message);   
 }
 
+/* Dumps an error message to the console and message que */
+void logerrmsg(thread_data_t* thread_data, int errnum) {
+      char themessage[MAX_DATA_SIZE];
+      snprintf(themessage, MAX_DATA_SIZE-1, "ERROR: (%d): %s", errnum, strerror(errnum));
+      logmsg(thread_data, themessage, stderr);
+}
+
+void aaaa(thread_data_t* thread_data, char *str) {
+      char themessage[MAX_DATA_SIZE];
+      snprintf(themessage, MAX_DATA_SIZE-1, "ERROR: ): %s", str);
+      logmsg(thread_data, themessage, stderr);
+}
+
+
+
 /* Prints instructions */
 void usage(char* name) {
    printf("Usage: %s [OPTION]\n\n", name);
@@ -193,7 +211,9 @@ int main(int argc, char* argv[]) {
    int prwdy_result = 0xDEADC0DE;
    
    if(pthread_mutex_init(&thread_data.mp, NULL)) {
+      logmsg(&thread_data, "mutex init failed...", stderr); 
       perror("pthread_mutex_init");
+      logerrmsg(&thread_data, errno);
       exit(EXIT_FAILURE);
    }
 
@@ -280,22 +300,32 @@ int main(int argc, char* argv[]) {
 
    sockfd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
    if(sockfd < 0) {
+      logerrmsg(&thread_data, errno);
       perror("socket");
+      logmsg(&thread_data, "socket failed...", stderr); 
       exit(EXIT_FAILURE);
    }
    if(setsockopt(sockfd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)) < 0) {
+      logerrmsg(&thread_data, errno);
+      logmsg(&thread_data, "setsockopt failed TTL...", stderr); 
       perror("setsockopt (IP_MULTICAST_TTL)");
       exit(EXIT_FAILURE);
    }
    if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0 ) {
+      logerrmsg(&thread_data, errno);
+      logmsg(&thread_data, "setsockopt failed REUSEADDR...", stderr); 
       perror("setsockopt (SO_REUSEADDR)");
       exit(EXIT_FAILURE);
    }
    if(bind(sockfd, (struct sockaddr*) &my_addr, sizeof(my_addr)) < 0) {
+      logerrmsg(&thread_data, errno);  
+      logmsg(&thread_data, "bind failed...", stderr);    
       perror("bind");
       exit(EXIT_FAILURE);
    }
    if(setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (void*)&mreq, sizeof(mreq)) < 0) {
+      logerrmsg(&thread_data, errno);
+      logmsg(&thread_data, "bind failed...", stderr);   
       perror("setsockopt (IP_ADD_MEMBERSHIP)");
       exit(EXIT_FAILURE);
    }
@@ -310,24 +340,32 @@ int main(int argc, char* argv[]) {
    // Spawn threads...   
    msg_send_result = pthread_create(&msg_send_tid, NULL, msg_send, (void*)&thread_data);
    if(msg_send_result != 0) {
+      logerrmsg(&thread_data, errno);
+      logmsg(&thread_data, "pthread_create (msg_send) failed...", stderr);   
       perror("pthread_create (send)");
       exit(EXIT_FAILURE);
    }
 
    msg_recv_result = pthread_create(&msg_recv_tid, NULL, msg_recv, (void*)&thread_data);
    if(msg_recv_result != 0) {
+      logerrmsg(&thread_data, errno);
+      logmsg(&thread_data, "pthread_create (msg_recv) failed...", stderr);  
       perror("pthread_create (recv)");
       exit(EXIT_FAILURE);
    }
 
    msg_recv_priv_result = pthread_create(&msg_recv_priv_tid, NULL, msg_recv_priv, (void*)&thread_data);
    if(msg_recv_priv_result != 0) {
+      logerrmsg(&thread_data, errno);
+      logmsg(&thread_data, "pthread_create (msg_recv_priv) failed...", stderr); 
       perror("pthread_create (recv_priv)");
       exit(EXIT_FAILURE);
    }
    
    prwdy_result = pthread_create(&prwdy_tid, NULL, prwdy, (void*)&thread_data);
    if(prwdy_result != 0) {
+      logerrmsg(&thread_data, errno);
+      logmsg(&thread_data, "pthread_create (prwdy) failed...", stderr); 
       perror("pthread_create (prwdy)");
       exit(EXIT_FAILURE);
    }
@@ -339,6 +377,8 @@ int main(int argc, char* argv[]) {
 
    // Drop membership
    if(setsockopt(sockfd, IPPROTO_IP, IP_DROP_MEMBERSHIP, (void*)&mreq, sizeof(mreq)) < 0) {
+      logerrmsg(&thread_data, errno);
+      logmsg(&thread_data, "setsockopt (IP_DROP_MEMBERSHIP) failed...", stderr); 
       perror("setsockopt (IP_DROP_MEMBERSHIP)");
       exit(EXIT_FAILURE);
    }
@@ -364,7 +404,9 @@ int sendRaw(char* message, thread_data_t* thread_data) {
       //} else if (errno = EINT) {
           // ???
       //}
-      perror("sentto");
+      logerrmsg(thread_data, errno);
+      perror("sendto");
+      logmsg(thread_data, "sendto failed...",stderr);
       thread_data->running = 0;
       return EXIT_FAILURE;
    }
@@ -378,6 +420,7 @@ int sendMessage(char* message, thread_data_t* thread_data) {
    if(!sendRaw(buffer, thread_data)) {
       return EXIT_FAILURE;
    }
+   logmsg(thread_data, "Send message calld...", stderr);
    
    return EXIT_SUCCESS;
 }
@@ -431,7 +474,8 @@ void* msg_recv(void *arg) {
    while(thread_data->running) {
       bytes = recvfrom(thread_data->sockfd, buffer, MAX_DATA_SIZE-1, 0, NULL, 0);
       if(bytes < 0) {
-         perror("recvfrom");
+         logerrmsg(thread_data, errno);
+	 perror("recvfrom");
          thread_data->running = 0;
          return (void*)EXIT_FAILURE;
       }
@@ -484,82 +528,90 @@ void* msg_recv_priv(void *arg) {
 
    char buffer[MAX_DATA_SIZE];
 
-	pthread_t thread_id;   
-	int sockfd = 0xDEADC0DE;
-	int fd_new = 0xDEADC0DE;
-	int error = 0;
+   pthread_t thread_id;   
+   int sockfd = 0xDEADC0DE;
+   int fd_new = 0xDEADC0DE;
+   int error = 0;
    const int on = 1;
    int pthread_result = 0xDEADC0DE;
-	struct sockaddr_in result;
-	socklen_t result_size = sizeof(result);
-   
-	sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if(sockfd == -1) {
-	   logmsg(thread_data, "Private message socket() error...", stderr);
-		thread_data->running = 0;
-		perror("[priv_msg] socket");
-		return (void*)EXIT_FAILURE;
-	}	
-   
+   struct sockaddr_in result;
+   socklen_t result_size = sizeof(result);
+
+   sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+   if(sockfd == -1) {
+      logerrmsg(thread_data, errno);
+      logmsg(thread_data, "Private message socket() error...", stderr);
+      thread_data->running = 0;
+      perror("[priv_msg] socket");
+      return (void*)EXIT_FAILURE;
+   }   
+
    if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0) {
-	   logmsg(thread_data, "Private message setsockopt() SO_REUSEADDR error...", stderr);
-		perror("[priv_msg] setsockopt");
-		thread_data->running = 0;
-		return (void*)EXIT_FAILURE;
-	}
-	
-	if(listen(sockfd, 10) < 0) {
-	   logmsg(thread_data, "Private message listen() error...", stderr);
-	   perror("[priv_msg] listen");
-		thread_data->running = 0;
-		return (void*)EXIT_FAILURE;
-	}
-	
-	if(getsockname(sockfd, (struct sockaddr*)&result, &result_size) < 0) {
-	   logmsg(thread_data, "priv_msg: getsockname() error...", stderr);
-	   perror("[priv_msg] listen");
-		thread_data->running = 0;
-		return (void*)EXIT_FAILURE;	   
-	}
+      logerrmsg(thread_data, errno);
+      logmsg(thread_data, "Private message setsockopt() SO_REUSEADDR error...", stderr);
+      perror("[priv_msg] setsockopt");
+      thread_data->running = 0;
+      return (void*)EXIT_FAILURE;
+   }
+
+   if(listen(sockfd, 10) < 0) {
+      logerrmsg(thread_data, errno);
+      logmsg(thread_data, "Private message listen() error...", stderr);
+      perror("[priv_msg] listen");
+      thread_data->running = 0;
+      return (void*)EXIT_FAILURE;
+   }
+
+   if(getsockname(sockfd, (struct sockaddr*)&result, &result_size) < 0) {
+      logerrmsg(thread_data, errno);
+      logmsg(thread_data, "priv_msg: getsockname() error...", stderr);
+      perror("[priv_msg] listen");
+      thread_data->running = 0;
+      return (void*)EXIT_FAILURE;      
+   }
 
    thread_data->priv_port = ntohs(result.sin_port);
- 	snprintf(buffer, MAX_DATA_SIZE, "Private messages on port %d.", thread_data->priv_port);
- 	logmsg(thread_data, buffer, stdout);
- 	
- 	while(thread_data->running) {
- 	   fd_new = accept(sockfd, NULL, NULL);
- 	   if(fd_new < 0) {
- 	      logmsg(thread_data, "Private message accept() error...", stdout);
- 	      perror("[priv_msg] accept");
- 	      error = 1;
- 	      break;
- 	   }
- 	   
- 	   pthread_result = pthread_create(&thread_id, NULL, msg_recv_priv_recieved, (void*)fd_new);
-		if (pthread_result != 0) {
- 	      logmsg(thread_data, "Private message pthread() error...", stdout);
+   snprintf(buffer, MAX_DATA_SIZE, "Private messages on port %d.", thread_data->priv_port);
+   logmsg(thread_data, buffer, stdout);
+
+   while(thread_data->running) {
+      fd_new = accept(sockfd, NULL, NULL);
+      if(fd_new < 0) {
+         logerrmsg(thread_data, errno);
+         logmsg(thread_data, "Private message accept() error...", stdout);
+         perror("[priv_msg] accept");
+         error = 1;
+         break;
+      }
+
+      pthread_result = pthread_create(&thread_id, NULL, msg_recv_priv_recieved, (void*)&fd_new);
+      if (pthread_result != 0) {
+      	 logerrmsg(thread_data, errno);
+      	 logmsg(thread_data, "Private message pthread() error...", stdout);
          perror("[priv_msg] pthread");
          error = 1;
          break;
       }
       pthread_detach(thread_id);
       close(fd_new);
- 	}  
+   }  
 
-	thread_data->running = 0;   
+   thread_data->running = 0;   
    close(sockfd);
    return (void*)error;
 }
 
 /* For when a private message is recieved */
 void* msg_recv_priv_recieved(void *arg) {
-   int fd_new = (int)arg;
+   int fd_new = *((int*)arg);
    
    char buf[MAX_DATA_SIZE];
-   int numbytes;
-   if ((numbytes=recv(fd_new, buf, MAX_DATA_SIZE-1, 0)) == -1) {
-	   perror("[msg_recv_priv_recieved] recv");
-	   close(fd_new);
+   int numbytes = recv(fd_new, buf, MAX_DATA_SIZE-1, 0);
+   if (numbytes == -1) {
+      aaaa(&thread_data, strerror(errno));
+      perror("[msg_recv_priv_recieved] recv");
+      logmsg(&thread_data, "msg_recv_priv_recieved recv error...", stdout);
+      close(fd_new);
       return (void*)EXIT_FAILURE;
    }
    
@@ -575,7 +627,7 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
 
    char hostname[MAX_DATA_SIZE] = {'\0'};
    int port = 0xDEADC0DE;
-   
+   char* errormsg;
    char final_message[MAX_DATA_SIZE];
    
    if(name == NULL || message == NULL) {
@@ -622,6 +674,7 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
 
    sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
    if(sockfd==-1) {
+      logerrmsg(thread_data, errno);
       perror("socket");
       logmsg(thread_data, "[priv_mesg] ERROR: socket() call failed...", stderr);
       return EXIT_FAILURE;
@@ -635,6 +688,7 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
       hptr = gethostbyname(hostname);
       
       if(hptr == NULL) {
+	 logerrmsg(thread_data, errno);
          perror("gethostbyname");
          logmsg(thread_data, "[priv_mesg] ERROR: gethostbyname() failed...", stderr);
          return EXIT_FAILURE;
@@ -645,6 +699,10 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
    
    ret = connect( sockfd, (struct sockaddr *)&server, sizeof server );
    if( ret == -1 ) {
+      logerrmsg(thread_data, errno);
+      //endwin(); /* DEBUG */
+      //printf("%s, %d\n", inet_ntoa(server.sin_addr), ntohs(server.sin_port));
+      //exit(1);
       perror("connect");
       logmsg(thread_data, "[priv_mesg] ERROR: connect() failed...", stderr);
       return EXIT_FAILURE;
@@ -654,6 +712,9 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
    nbytes = write( sockfd, final_message, strlen( final_message ) );
    if( nbytes == -1 ) {
       perror("write");
+      logmsg(thread_data, "[priv_mesg] ERROR: write() failed...", stderr);
+      errormsg = strerror(errno);
+      logmsg(thread_data, errormsg, stderr);
       close(sockfd);
       return EXIT_FAILURE;
    }
@@ -686,7 +747,9 @@ void* prwdy(void *arg) {
    
       // Initilize the screen on a resize
       if(thread_data->resize_event) {
-         endwin();
+         if(win)
+       endwin();
+       
          win = initscr();
          if(!win) {
             thread_data->running = 0;
