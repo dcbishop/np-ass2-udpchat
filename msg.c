@@ -555,7 +555,7 @@ void* msg_recv_priv(void *arg) {
          break;
       }
 
-      pthread_result = pthread_create(&thread_id, NULL, msg_recv_priv_recieved, (void*)&fd_new);
+      pthread_result = pthread_create(&thread_id, NULL, msg_recv_priv_recieved, (void*)fd_new);
       if (pthread_result != 0) {
       	 logmsg(thread_data, "Private message pthread() error...", stdout);
          perror("[priv_msg] pthread");
@@ -563,7 +563,7 @@ void* msg_recv_priv(void *arg) {
          break;
       }
       pthread_detach(thread_id);
-      close(fd_new);
+      //close(fd_new);
    }  
 
    thread_data->running = 0;   
@@ -573,7 +573,7 @@ void* msg_recv_priv(void *arg) {
 
 /* For when a private message is recieved */
 void* msg_recv_priv_recieved(void *arg) {
-   int fd_new = *((int*)arg);
+   int fd_new = (int)arg;
    
    char buf[MAX_DATA_SIZE];
    int numbytes = recv(fd_new, buf, MAX_DATA_SIZE-1, 0);
@@ -636,19 +636,20 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
    // Send the message...
    int sockfd = 0xDEADC0DE;
    int ret = 0xDEADC0DE;
-   struct sockaddr_in server;
+   //struct sockaddr_in server;
+   struct addrinfo *rp, *result;
    struct hostent *hptr;
    ssize_t nbytes;
    char **ptr = NULL;
 
-   sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+   /*sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
    if(sockfd==-1) {
       perror("socket");
       logmsg(thread_data, "[priv_mesg] ERROR: socket() call failed...", stderr);
       return EXIT_FAILURE;
-   }
+   }*/
    
-   memset(&server, 0, sizeof(struct sockaddr_in));
+   /*memset(&server, 0, sizeof(struct sockaddr_in));
    server.sin_family = AF_INET;
    server.sin_port = htons(port);
    
@@ -662,17 +663,50 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
       }
       ptr = hptr->h_addr_list;
       memcpy( &server.sin_addr, *ptr, sizeof( struct in_addr ) );
+   }*/
+
+   int s = getaddrinfo(hostname, NULL, NULL, &result);
+   if(s != 0) {
+      perror("getaddrinfo");
+      logmsg(thread_data, "[priv_mesg] ERROR: getaddrinfo() failed...", stderr);
+      return EXIT_FAILURE;
    }
+
+   fprintf(stderr, "DEBUG: %s\n", hostname);
    
-   ret = connect( sockfd, (struct sockaddr *)&server, sizeof server );
+   /*ret = connect( sockfd, (struct sockaddr *)&server, sizeof server );
    if( ret == -1 ) {
-      //endwin(); /* DEBUG */
-      //printf("%s, %d\n", inet_ntoa(server.sin_addr), ntohs(server.sin_port));
+      //endwin();  DEBUG 
       //exit(1);
       perror("connect");
       logmsg(thread_data, "[priv_mesg] ERROR: connect() failed...", stderr);
       return EXIT_FAILURE;
+   }*/
+
+  char addrString[512];
+   for(rp = result; rp != NULL; rp = rp->ai_next) {
+      logmsg(thread_data, "Loop", stderr);
+   //fprintf(stderr, "DEBUG: %s, %d\n", inet_ntoa(server.sin_addr), ntohs(server.sin_port));
+ //  fprintf(stderr, "DEBUG: %s, \n", inet_ntoa(rp->ai_addr));//, ntohs(server.sin_port));
+      if (0==getnameinfo(rp->ai_addr, sizeof(struct sockaddr),
+         addrString, 512, NULL, 0, NI_NUMERICHOST))
+         fprintf(stderr, "address is %s\n", addrString);
+ 
+//      fprintf(stderr, "DEBUG: %s\n", inet_ntop(rp->ai_addr)
+      sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+      if(sockfd == -1)
+         continue;
+      if(connect(sockfd, rp->ai_addr, rp->ai_addrlen) != -1)
+         break;
+      close(sockfd);
    }
+
+   if(rp == NULL) {
+      logmsg(thread_data, "[priv_mesg] ERROR: connect() failed....", stderr);
+      return(EXIT_FAILURE);
+   }
+
+   freeaddrinfo(result);
 
    // TODO: epipe
    nbytes = write( sockfd, final_message, strlen( final_message ) );
