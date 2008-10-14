@@ -7,3 +7,6 @@ msg_recv
 .nfs*
 core
 msg
+*.log
+stderr
+stdtest

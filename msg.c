@@ -638,9 +638,15 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
    int ret = 0xDEADC0DE;
    //struct sockaddr_in server;
    struct addrinfo *rp, *result;
+   struct addrinfo hints;
    struct hostent *hptr;
    ssize_t nbytes;
    char **ptr = NULL;
+
+   memset(&hints, 0, sizeof(struct addrinfo));
+   hints.ai_family = AF_INET;
+   hints.ai_socktype = SOCK_STREAM;
+   hints.ai_flags = IPPROTO_TCP;
 
    /*sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
    if(sockfd==-1) {
@@ -665,7 +671,7 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
       memcpy( &server.sin_addr, *ptr, sizeof( struct in_addr ) );
    }*/
 
-   int s = getaddrinfo(hostname, NULL, NULL, &result);
+   int s = getaddrinfo(hostname, NULL, &hints, &result);
    if(s != 0) {
       perror("getaddrinfo");
       logmsg(thread_data, "[priv_mesg] ERROR: getaddrinfo() failed...", stderr);
@@ -694,10 +700,18 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
  
 //      fprintf(stderr, "DEBUG: %s\n", inet_ntop(rp->ai_addr)
       sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-      if(sockfd == -1)
+      if(sockfd == -1) {
+         fprintf(stderr, "DEBUG: sockfd was -1.\n");
+         perror("blah");
          continue;
-      if(connect(sockfd, rp->ai_addr, rp->ai_addrlen) != -1)
+      }
+      if(connect(sockfd, rp->ai_addr, rp->ai_addrlen) != -1) {
+         fprintf(stderr, "DEBUG: Connect was not -1.\n");
+         perror("blah");
          break;
+      }
+      perror("close");
+//         fprintf(stderr, "DEBUG: close!.\n");
       close(sockfd);
    }
 
