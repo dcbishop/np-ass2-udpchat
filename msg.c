@@ -1,6 +1,5 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h> /* sleep() */
@@ -18,7 +17,7 @@
 extern int errno;
 
 
-#define DEFAULT_NAME "Sgt.Fury"
+#define DEFAULT_NAME "Sgt. Fury"
 #define DEFAULT_PORT 12345
 #define DEFAULT_ADDRESS "225.0.0.1"
 #define MAX_DATA_SIZE 1024
@@ -157,16 +156,25 @@ void message_apocalypse(thread_data_t* thread_data, int que) {
 }
 
 /* Dumps a message to the console and the message que */
-void logmsg(thread_data_t* thread_data, FILE* pipe, char* format, ...) {
-   char message[MAX_DATA_SIZE];
-   va_list ap;
-   va_start(ap, format);
-   vsnprintf(message, MAX_DATA_SIZE-1, format, ap);
-   va_end(ap);
-   mvprintw(4, 4, message);
-   //add_message(thread_data, QUE_RECEIVE, message);
+void logmsg(thread_data_t* thread_data, char* message, FILE* pipe) {
+   add_message(thread_data, QUE_RECEIVE, message);
    fprintf(pipe, "%s\n", message);   
 }
+
+/* Dumps an error message to the console and message que */
+void logerrmsg(thread_data_t* thread_data, int errnum) {
+      char themessage[MAX_DATA_SIZE];
+      snprintf(themessage, MAX_DATA_SIZE-1, "ERROR: (%d): %s", errnum, strerror(errnum));
+      logmsg(thread_data, themessage, stderr);
+}
+
+void aaaa(thread_data_t* thread_data, char *str) {
+      char themessage[MAX_DATA_SIZE];
+      snprintf(themessage, MAX_DATA_SIZE-1, "ERROR: ): %s", str);
+      logmsg(thread_data, themessage, stderr);
+}
+
+
 
 /* Prints instructions */
 void usage(char* name) {
@@ -203,8 +211,9 @@ int main(int argc, char* argv[]) {
    int prwdy_result = 0xDEADC0DE;
    
    if(pthread_mutex_init(&thread_data.mp, NULL)) {
-      logmsg(&thread_data, stderr, "mutex init failed..."); 
+      logmsg(&thread_data, "mutex init failed...", stderr); 
       perror("pthread_mutex_init");
+      logerrmsg(&thread_data, errno);
       exit(EXIT_FAILURE);
    }
 
@@ -237,7 +246,8 @@ int main(int argc, char* argv[]) {
             strncpy(address, optarg, MAX_DATA_SIZE);
             break;
          case 'r':
-            logmsg(&thread_data, stdout, "%s: You have set the r flag which does nothing, thats just swell.", argv[0]);
+            snprintf(buffer, MAX_DATA_SIZE, "%s: You have set the r flag which does nothing, thats just swell.", argv[0]);
+            logmsg(&thread_data, buffer, stdout);
             break;
          case 'p':
             port = atoi(optarg);
@@ -247,7 +257,8 @@ int main(int argc, char* argv[]) {
             exit(EXIT_SUCCESS);
             break;
          case '?': 
-            logmsg(&thread_data, stderr, buffer, "%s: Thats not right... try again...", argv[0]);
+            snprintf(buffer, MAX_DATA_SIZE, "%s: Thats not right... try again...", argv[0]);
+            logmsg(&thread_data, buffer, stderr);
             usage(argv[0]);
             exit(EXIT_FAILURE);
             break;
@@ -256,19 +267,24 @@ int main(int argc, char* argv[]) {
    
    if(thread_data.username[0] == '\0') {
       strncpy(thread_data.username, DEFAULT_NAME, MAX_DATA_SIZE);
-      logmsg(&thread_data, stdout, buffer, "%s: Due to your failure to specify a name, you will hence forth be known as", argv[0]);
-      logmsg(&thread_data, stdout, buffer, "'%s'.", thread_data.username);
+      snprintf(buffer, MAX_DATA_SIZE, "%s: Due to your failure to specify a name, you will hence forth be known as", argv[0]);
+      logmsg(&thread_data, buffer, stdout);
+      snprintf(buffer, MAX_DATA_SIZE, "'%s'.", thread_data.username);
+      logmsg(&thread_data, buffer, stdout);
    }
    
    if(address[0] == '\0') {
       strncpy(address, DEFAULT_ADDRESS, MAX_DATA_SIZE);
-      logmsg(&thread_data, stdout, buffer, "%s: %s, because of your apparent inability to specify a", argv[0], thread_data.username);
-      logmsg(&thread_data, stdout, buffer, "multicast address, %s has been assigned for you.", address);
+      snprintf(buffer, MAX_DATA_SIZE, "%s: %s, because of your apparent inability to specify a", argv[0], thread_data.username);
+      logmsg(&thread_data, buffer, stdout);
+      snprintf(buffer, MAX_DATA_SIZE, "multicast address, %s has been assigned for you.", address);
+      logmsg(&thread_data, buffer, stdout);
    }
    
    if(port < 0) {
       port = 12345;
-      logmsg(&thread_data, stdout, buffer, "%s: %s, as you have not chosen a port number %d has been set.", argv[0], thread_data.username, port);
+      snprintf(buffer, MAX_DATA_SIZE, "%s: %s, as you have not chosen a port number %d has been set.", argv[0], thread_data.username, port);
+      logmsg(&thread_data, buffer, stdout);
    }
    
    memset(&my_addr, 0, sizeof(my_addr));
@@ -284,27 +300,32 @@ int main(int argc, char* argv[]) {
 
    sockfd = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
    if(sockfd < 0) {
+      logerrmsg(&thread_data, errno);
       perror("socket");
-      logmsg(&thread_data, stderr, "socket failed..."); 
+      logmsg(&thread_data, "socket failed...", stderr); 
       exit(EXIT_FAILURE);
    }
    if(setsockopt(sockfd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)) < 0) {
-      logmsg(&thread_data, stderr, "setsockopt failed [IP_MULTICAST_TTL]..."); 
+      logerrmsg(&thread_data, errno);
+      logmsg(&thread_data, "setsockopt failed TTL...", stderr); 
       perror("setsockopt (IP_MULTICAST_TTL)");
       exit(EXIT_FAILURE);
    }
    if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0 ) {
-      logmsg(&thread_data, stderr, "setsockopt failed REUSEADDR..."); 
+      logerrmsg(&thread_data, errno);
+      logmsg(&thread_data, "setsockopt failed REUSEADDR...", stderr); 
       perror("setsockopt (SO_REUSEADDR)");
       exit(EXIT_FAILURE);
    }
    if(bind(sockfd, (struct sockaddr*) &my_addr, sizeof(my_addr)) < 0) {
-      logmsg(&thread_data, stderr, "bind failed...");    
+      logerrmsg(&thread_data, errno);  
+      logmsg(&thread_data, "bind failed...", stderr);    
       perror("bind");
       exit(EXIT_FAILURE);
    }
    if(setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, (void*)&mreq, sizeof(mreq)) < 0) {
-      logmsg(&thread_data, stderr, "bind failed...");   
+      logerrmsg(&thread_data, errno);
+      logmsg(&thread_data, "bind failed...", stderr);   
       perror("setsockopt (IP_ADD_MEMBERSHIP)");
       exit(EXIT_FAILURE);
    }
@@ -319,28 +340,32 @@ int main(int argc, char* argv[]) {
    // Spawn threads...   
    msg_send_result = pthread_create(&msg_send_tid, NULL, msg_send, (void*)&thread_data);
    if(msg_send_result != 0) {
-      logmsg(&thread_data, stderr, "pthread_create (msg_send) failed...");
+      logerrmsg(&thread_data, errno);
+      logmsg(&thread_data, "pthread_create (msg_send) failed...", stderr);   
       perror("pthread_create (send)");
       exit(EXIT_FAILURE);
    }
 
    msg_recv_result = pthread_create(&msg_recv_tid, NULL, msg_recv, (void*)&thread_data);
    if(msg_recv_result != 0) {
-      logmsg(&thread_data, stderr, "pthread_create (msg_recv) failed...");  
+      logerrmsg(&thread_data, errno);
+      logmsg(&thread_data, "pthread_create (msg_recv) failed...", stderr);  
       perror("pthread_create (recv)");
       exit(EXIT_FAILURE);
    }
 
    msg_recv_priv_result = pthread_create(&msg_recv_priv_tid, NULL, msg_recv_priv, (void*)&thread_data);
    if(msg_recv_priv_result != 0) {
-      logmsg(&thread_data, stderr, "pthread_create (msg_recv_priv) failed..."); 
+      logerrmsg(&thread_data, errno);
+      logmsg(&thread_data, "pthread_create (msg_recv_priv) failed...", stderr); 
       perror("pthread_create (recv_priv)");
       exit(EXIT_FAILURE);
    }
    
    prwdy_result = pthread_create(&prwdy_tid, NULL, prwdy, (void*)&thread_data);
    if(prwdy_result != 0) {
-      logmsg(&thread_data, stderr, "pthread_create (prwdy) failed..."); 
+      logerrmsg(&thread_data, errno);
+      logmsg(&thread_data, "pthread_create (prwdy) failed...", stderr); 
       perror("pthread_create (prwdy)");
       exit(EXIT_FAILURE);
    }
@@ -352,7 +377,8 @@ int main(int argc, char* argv[]) {
 
    // Drop membership
    if(setsockopt(sockfd, IPPROTO_IP, IP_DROP_MEMBERSHIP, (void*)&mreq, sizeof(mreq)) < 0) {
-      logmsg(&thread_data, stderr, "ERROR: setsockopt (IP_DROP_MEMBERSHIP) failed..."); 
+      logerrmsg(&thread_data, errno);
+      logmsg(&thread_data, "setsockopt (IP_DROP_MEMBERSHIP) failed...", stderr); 
       perror("setsockopt (IP_DROP_MEMBERSHIP)");
       exit(EXIT_FAILURE);
    }
@@ -367,22 +393,20 @@ int main(int argc, char* argv[]) {
    
    printf("Good for you! You reached the end of the program....\n");
    
-   printf("%d\n",  thread_data.running);  /*DEBUG*/
    exit(EXIT_SUCCESS);
 }
 
 /* Sends a message without any formatting applied to it */
 int sendRaw(char* message, thread_data_t* thread_data) {
    if(sendto(thread_data->sockfd, message, strlen(message), 0, (struct sockaddr *)thread_data->their_addr, sizeof(*thread_data->their_addr)) < 0) {
-      if(errno == EPIPE) {
-         logmsg(thread_data, stderr, "WARNING: sendto failed, EPIPE received...");
-         return EXIT_SUCCESS;
-      /*} else if (errno = EINT) {
-         logmsg(thread_data, stderr, "WARNING: sendto failed, EINT received...");
-         return EXIT_SUCCESS;*/
-      }
+      //if(errno == EPIPE) {
+          // ??? 
+      //} else if (errno = EINT) {
+          // ???
+      //}
+      logerrmsg(thread_data, errno);
       perror("sendto");
-      logmsg(thread_data, stderr, "ERROR: sendto failed...");
+      logmsg(thread_data, "sendto failed...",stderr);
       thread_data->running = 0;
       return EXIT_FAILURE;
    }
@@ -396,7 +420,7 @@ int sendMessage(char* message, thread_data_t* thread_data) {
    if(!sendRaw(buffer, thread_data)) {
       return EXIT_FAILURE;
    }
-   logmsg(thread_data, stderr, "Send message calld...");
+   logmsg(thread_data, "Send message calld...", stderr);
    
    return EXIT_SUCCESS;
 }
@@ -411,7 +435,7 @@ void* msg_send(void *arg) {
    snprintf(buffer, MAX_DATA_SIZE-1, "<%s@%s entered chat group>", thread_data->username, thread_data->hostname);   
    
    if(sendRaw(buffer, thread_data) == EXIT_FAILURE) {
-      logmsg(thread_data, stderr, "ERROR: Failed to send join message...");
+      logmsg(thread_data, "ERROR: Failed to send join message...", stderr);
    }
    
    while(thread_data->running) {
@@ -429,10 +453,11 @@ void* msg_send(void *arg) {
    
    snprintf(buffer, MAX_DATA_SIZE-1, "<%s@%s leaving chat group>", thread_data->username, thread_data->hostname);   
    if(sendRaw(buffer, thread_data)) {
-      logmsg(thread_data, stderr, "WARNING: Failed to send depart message...");
+      logmsg(thread_data, "ERROR: Failed to send depart message...", stderr);
    }
    
-   logmsg(thread_data, stdout, "Send thread, self-terminating...");
+   snprintf(buffer, MAX_DATA_SIZE, "Send thread, self-terminating...");
+   logmsg(thread_data, buffer, stdout);
    return (void*)EXIT_SUCCESS;
 }
 
@@ -449,7 +474,8 @@ void* msg_recv(void *arg) {
    while(thread_data->running) {
       bytes = recvfrom(thread_data->sockfd, buffer, MAX_DATA_SIZE-1, 0, NULL, 0);
       if(bytes < 0) {
-         perror("recvfrom");
+         logerrmsg(thread_data, errno);
+	 perror("recvfrom");
          thread_data->running = 0;
          return (void*)EXIT_FAILURE;
       }
@@ -490,7 +516,8 @@ void* msg_recv(void *arg) {
       }
    }
    
-   logmsg(thread_data, stdout, "Recv thread, self-terminating...");
+   snprintf(buffer, MAX_DATA_SIZE, "Recv thread, self-terminating...");
+   logmsg(thread_data, buffer, stdout);
    return (void*)EXIT_SUCCESS;
 }
 
@@ -498,6 +525,8 @@ void* msg_recv(void *arg) {
 void* msg_recv_priv(void *arg) {
    thread_data_t* thread_data;
    thread_data = (thread_data_t*)arg;
+
+   char buffer[MAX_DATA_SIZE];
 
    pthread_t thread_id;   
    int sockfd = 0xDEADC0DE;
@@ -510,40 +539,46 @@ void* msg_recv_priv(void *arg) {
 
    sockfd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
    if(sockfd == -1) {
-      logmsg(thread_data, stderr, "Private message socket() error...");
+      logerrmsg(thread_data, errno);
+      logmsg(thread_data, "Private message socket() error...", stderr);
       thread_data->running = 0;
       perror("[priv_msg] socket");
       return (void*)EXIT_FAILURE;
    }   
 
    if(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0) {
-      logmsg(thread_data, stderr, "Private message setsockopt() SO_REUSEADDR error...");
+      logerrmsg(thread_data, errno);
+      logmsg(thread_data, "Private message setsockopt() SO_REUSEADDR error...", stderr);
       perror("[priv_msg] setsockopt");
       thread_data->running = 0;
       return (void*)EXIT_FAILURE;
    }
 
    if(listen(sockfd, 10) < 0) {
-      logmsg(thread_data, stderr, "Private message listen() error...");
+      logerrmsg(thread_data, errno);
+      logmsg(thread_data, "Private message listen() error...", stderr);
       perror("[priv_msg] listen");
       thread_data->running = 0;
       return (void*)EXIT_FAILURE;
    }
 
    if(getsockname(sockfd, (struct sockaddr*)&result, &result_size) < 0) {
-      logmsg(thread_data, stderr, "priv_msg: getsockname() error...");
+      logerrmsg(thread_data, errno);
+      logmsg(thread_data, "priv_msg: getsockname() error...", stderr);
       perror("[priv_msg] listen");
       thread_data->running = 0;
       return (void*)EXIT_FAILURE;      
    }
 
    thread_data->priv_port = ntohs(result.sin_port);
-   logmsg(thread_data, stdout, "Private messages on port %d.", thread_data->priv_port);
+   snprintf(buffer, MAX_DATA_SIZE, "Private messages on port %d.", thread_data->priv_port);
+   logmsg(thread_data, buffer, stdout);
 
    while(thread_data->running) {
       fd_new = accept(sockfd, NULL, NULL);
       if(fd_new < 0) {
-         logmsg(thread_data, stdout, "Private message accept() error...");
+         logerrmsg(thread_data, errno);
+         logmsg(thread_data, "Private message accept() error...", stdout);
          perror("[priv_msg] accept");
          error = 1;
          break;
@@ -551,7 +586,8 @@ void* msg_recv_priv(void *arg) {
 
       pthread_result = pthread_create(&thread_id, NULL, msg_recv_priv_recieved, (void*)&fd_new);
       if (pthread_result != 0) {
-      	 logmsg(thread_data, stdout, "Private message pthread() error...");
+      	 logerrmsg(thread_data, errno);
+      	 logmsg(thread_data, "Private message pthread() error...", stdout);
          perror("[priv_msg] pthread");
          error = 1;
          break;
@@ -568,19 +604,19 @@ void* msg_recv_priv(void *arg) {
 /* For when a private message is recieved */
 void* msg_recv_priv_recieved(void *arg) {
    int fd_new = *((int*)arg);
-   thread_data_t* thread_data = thread_data;
    
    char buf[MAX_DATA_SIZE];
    int numbytes = recv(fd_new, buf, MAX_DATA_SIZE-1, 0);
    if (numbytes == -1) {
+      aaaa(&thread_data, strerror(errno));
       perror("[msg_recv_priv_recieved] recv");
-      logmsg(thread_data, stdout, "msg_recv_priv_recieved recv error...");
+      logmsg(&thread_data, "msg_recv_priv_recieved recv error...", stdout);
       close(fd_new);
       return (void*)EXIT_FAILURE;
    }
    
    buf[numbytes] = '\0';
-   add_message(thread_data, QUE_RECEIVE, buf);
+   add_message(&thread_data, QUE_RECEIVE, buf);
    
    close(fd_new);
    return (void*)EXIT_SUCCESS;
@@ -591,6 +627,7 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
 
    char hostname[MAX_DATA_SIZE] = {'\0'};
    int port = 0xDEADC0DE;
+   char* errormsg;
    char final_message[MAX_DATA_SIZE];
    
    if(name == NULL || message == NULL) {
@@ -617,13 +654,13 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
    }
          
    if(!got_reply) {
-      logmsg(thread_data, stderr, "[priv_mesg] ERROR: No whois response...");
+      logmsg(thread_data, "[priv_mesg] ERROR: No whois response...", stderr);
       return EXIT_FAILURE;
    }
    
    /* Print the send message */
    snprintf(final_message, MAX_DATA_SIZE-1, "*%s > %s* %s", thread_data->username, name, message);
-   logmsg(thread_data, stdout, final_message);
+   logmsg(thread_data, final_message, stdout);
    
    snprintf(final_message, MAX_DATA_SIZE-1, "*%s* %s", thread_data->username, message);
    
@@ -637,8 +674,9 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
 
    sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
    if(sockfd==-1) {
+      logerrmsg(thread_data, errno);
       perror("socket");
-      logmsg(thread_data, stderr, "[priv_mesg] ERROR: socket() call failed...");
+      logmsg(thread_data, "[priv_mesg] ERROR: socket() call failed...", stderr);
       return EXIT_FAILURE;
    }
    
@@ -650,8 +688,9 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
       hptr = gethostbyname(hostname);
       
       if(hptr == NULL) {
+	 logerrmsg(thread_data, errno);
          perror("gethostbyname");
-         logmsg(thread_data, stderr, "[priv_mesg] ERROR: gethostbyname() failed...");
+         logmsg(thread_data, "[priv_mesg] ERROR: gethostbyname() failed...", stderr);
          return EXIT_FAILURE;
       }
       ptr = hptr->h_addr_list;
@@ -660,11 +699,12 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
    
    ret = connect( sockfd, (struct sockaddr *)&server, sizeof server );
    if( ret == -1 ) {
+      logerrmsg(thread_data, errno);
       //endwin(); /* DEBUG */
       //printf("%s, %d\n", inet_ntoa(server.sin_addr), ntohs(server.sin_port));
       //exit(1);
       perror("connect");
-      logmsg(thread_data, stderr, "[priv_mesg] ERROR: connect() failed...");
+      logmsg(thread_data, "[priv_mesg] ERROR: connect() failed...", stderr);
       return EXIT_FAILURE;
    }
 
@@ -672,7 +712,9 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
    nbytes = write( sockfd, final_message, strlen( final_message ) );
    if( nbytes == -1 ) {
       perror("write");
-      logmsg(thread_data, stderr, "[priv_mesg] ERROR: write() failed...");
+      logmsg(thread_data, "[priv_mesg] ERROR: write() failed...", stderr);
+      errormsg = strerror(errno);
+      logmsg(thread_data, errormsg, stderr);
       close(sockfd);
       return EXIT_FAILURE;
    }
@@ -688,7 +730,8 @@ void prwdy_resize() {
 
 /* The ncurses thread */
 void* prwdy(void *arg) {
-   thread_data_t* thread_data = (thread_data_t*)arg; 
+   thread_data_t* thread_data;
+   thread_data = (thread_data_t*)arg; 
    int c = 0xDEADC0DE;
    int chnum = 0;
    char buffer[MAX_DATA_SIZE] = {'\0'};
@@ -711,7 +754,7 @@ void* prwdy(void *arg) {
          if(!win) {
             thread_data->running = 0;
             snprintf(buffer, MAX_DATA_SIZE, "ERROR initilizing ncurses...");
-            logmsg(thread_data, stderr, buffer);
+            logmsg(thread_data, buffer, stderr);
             return (void*)EXIT_FAILURE;
          }
 
@@ -802,7 +845,7 @@ void* prwdy(void *arg) {
    endwin();
    
    snprintf(buffer, MAX_DATA_SIZE, "Prwdy thread, self-terminating...");
-   logmsg(thread_data, stdout, buffer);
+   logmsg(thread_data, buffer, stdout);
    
    return (void*)EXIT_SUCCESS;
 }
@@ -849,17 +892,21 @@ static void seppuku(int sig) {
    static int deaths = 0;
    
    if(thread_data.running == 0) {
-      if(deaths < 3) {
-         logmsg(&thread_data, stdout, buffer, "Whoever is out of patience is out of possession of his soul.");
-         logmsg(&thread_data, stdout, "\t- Francis Bacon");
+      if(deaths<3) {
+         snprintf(buffer, MAX_DATA_SIZE, "Whoever is out of patience is out of possession of his soul.");
+         logmsg(&thread_data, buffer, stdout);
+         snprintf(buffer, MAX_DATA_SIZE, "\t- Francis Bacon");
+         logmsg(&thread_data, buffer, stdout);
       } else {
-         logmsg(&thread_data, stdout, "%s is to instant, dying badly...", thread_data.username);
+         snprintf(buffer, MAX_DATA_SIZE, "%s is to instant, dying badly...", thread_data.username);
+         logmsg(&thread_data, buffer, stdout);
          endwin();
          exit(EXIT_FAILURE);
       }
       deaths++;
    } else {
       thread_data.running = 0;
-      logmsg(&thread_data, stdout, "Death-threat recived, Suiciding!");
+      snprintf(buffer, MAX_DATA_SIZE, "Death-threat recived, Suiciding!");
+      logmsg(&thread_data, buffer, stdout);
    }
 }
