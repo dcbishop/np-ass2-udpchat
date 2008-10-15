@@ -636,30 +636,33 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
    // Send the message...
    int sockfd = 0xDEADC0DE;
    int ret = 0xDEADC0DE;
-   //struct sockaddr_in server;
+   struct sockaddr_in server;
    struct addrinfo *rp, *result;
-   struct addrinfo hints;
    struct hostent *hptr;
    ssize_t nbytes;
    char **ptr = NULL;
+   struct in_addr a;
 
+   struct addrinfo hints;
    memset(&hints, 0, sizeof(struct addrinfo));
    hints.ai_family = AF_INET;
    hints.ai_socktype = SOCK_STREAM;
-   hints.ai_flags = IPPROTO_TCP;
+   hints.ai_flags = AI_PASSIVE;
+   //hints.ai_flags = IPPROTO_TCP;
 
    /*sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
    if(sockfd==-1) {
       perror("socket");
       logmsg(thread_data, "[priv_mesg] ERROR: socket() call failed...", stderr);
       return EXIT_FAILURE;
-   }*/
+   }
    
-   /*memset(&server, 0, sizeof(struct sockaddr_in));
+   memset(&server, 0, sizeof(struct sockaddr_in));
    server.sin_family = AF_INET;
-   server.sin_port = htons(port);
+   server.sin_port = htons(port);*/
    
-   if(inet_aton(hostname, &server.sin_addr) < 0) {
+
+   /*if(inet_aton(hostname, &server.sin_addr) < 0) {
       hptr = gethostbyname(hostname);
       
       if(hptr == NULL) {
@@ -671,15 +674,24 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
       memcpy( &server.sin_addr, *ptr, sizeof( struct in_addr ) );
    }*/
 
-   int s = getaddrinfo(hostname, NULL, &hints, &result);
-   if(s != 0) {
-      perror("getaddrinfo");
-      logmsg(thread_data, "[priv_mesg] ERROR: getaddrinfo() failed...", stderr);
-      return EXIT_FAILURE;
-   }
+   //if(inet_aton(hostname, &server.sin_addr) < 0) {
+ /*     hptr = gethostbyname(hostname);
+      if(hptr) {
+         fprintf(stderr, "DEBUG: hptr: %s\n", hptr->h_name);
+         while(*hptr->h_aliases)
+            fprintf(stderr, "DEBUG:\talias: %s\n", *hptr->h_aliases++);
+         while(*hptr->h_addr_list) {
+            //bcopy(*hptr->h_addr_list++, (char *) &a, sizeof(a));
+            memcpy(*hptr->h_addr_list++, &server.sin_addr, sizeof(struct in_addr));
+            fprintf(stderr, "DEBUG:\taddress: %s\n", inet_ntoa(a));
+         }
+      } else {
+         perror(hostname);
+         logmsg(thread_data, "[priv_mesg] ERROR: gethostbyname() failed...", stderr);
+         return EXIT_FAILURE;
+      }*/
+   //}
 
-   fprintf(stderr, "DEBUG: %s\n", hostname);
-   
    /*ret = connect( sockfd, (struct sockaddr *)&server, sizeof server );
    if( ret == -1 ) {
       //endwin();  DEBUG 
@@ -689,30 +701,42 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
       return EXIT_FAILURE;
    }*/
 
+   char aport[20];
+   snprintf(aport, 20-1, "%d", port); 
+   /* DEBUG: getaddrinfo test code.... */
+   int s = getaddrinfo(hostname, aport, &hints, &result);
+   if(s != 0) {
+      perror("getaddrinfo");
+      logmsg(thread_data, "[priv_mesg] ERROR: getaddrinfo() failed...", stderr);
+      return EXIT_FAILURE;
+   }
+
+   fprintf(stderr, "DEBUG: %s\n", hostname);
+   
+
   char addrString[512];
    for(rp = result; rp != NULL; rp = rp->ai_next) {
-      logmsg(thread_data, "Loop", stderr);
-   //fprintf(stderr, "DEBUG: %s, %d\n", inet_ntoa(server.sin_addr), ntohs(server.sin_port));
- //  fprintf(stderr, "DEBUG: %s, \n", inet_ntoa(rp->ai_addr));//, ntohs(server.sin_port));
+      logmsg(thread_data, "DEBUG: rp Loop", stderr);
+
+      /* DEBUG: Print the address name */
       if (0==getnameinfo(rp->ai_addr, sizeof(struct sockaddr),
          addrString, 512, NULL, 0, NI_NUMERICHOST))
-         fprintf(stderr, "address is %s\n", addrString);
+      fprintf(stderr, "address is %s\n", addrString);
  
-//      fprintf(stderr, "DEBUG: %s\n", inet_ntop(rp->ai_addr)
       sockfd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
       if(sockfd == -1) {
          fprintf(stderr, "DEBUG: sockfd was -1.\n");
          perror("blah");
          continue;
       }
-      if(connect(sockfd, rp->ai_addr, rp->ai_addrlen) != -1) {
+      if(connect(sockfd, rp->ai_addr, rp->ai_addrlen) == -1) {
          fprintf(stderr, "DEBUG: Connect was not -1.\n");
          perror("blah");
-         break;
+         continue;
       }
-      perror("close");
-//         fprintf(stderr, "DEBUG: close!.\n");
-      close(sockfd);
+ //     perror("close");
+   //   close(sockfd);
+      break;
    }
 
    if(rp == NULL) {
@@ -725,6 +749,10 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
    // TODO: epipe
    nbytes = write( sockfd, final_message, strlen( final_message ) );
    if( nbytes == -1 ) {
+      if(errno == EPIPE) {
+         logmsg(thread_data, "[priv_mesg] ERROR: write() failed, EPIPE recieved...", stderr);
+         return EXIT_SUCCESS;
+      }
       perror("write");
       logmsg(thread_data, "[priv_mesg] ERROR: write() failed...", stderr);
       errormsg = strerror(errno);
