@@ -635,13 +635,8 @@ int priv_mesg(thread_data_t* thread_data, char* name, char* message) {
    
    // Send the message...
    int sockfd = 0xDEADC0DE;
-   int ret = 0xDEADC0DE;
-   struct sockaddr_in server;
    struct addrinfo *rp, *result;
-   struct hostent *hptr;
    ssize_t nbytes;
-   char **ptr = NULL;
-   struct in_addr a;
 
    struct addrinfo hints;
    memset(&hints, 0, sizeof(struct addrinfo));
