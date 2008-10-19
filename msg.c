@@ -855,7 +855,7 @@ void* prwdy(void *arg) {
             thread_data->running = 0;
          }
             
-         // When person pushes enter
+         // When person pushes enter (Or overruns the buffer)
          if(c == 13 || c == KEY_ENTER || chnum > MAX_DATA_SIZE-1) {
             if(buffer[0] == '\0') {
                thread_data->running = 0; /* According to assignment specs we die now */
@@ -864,9 +864,8 @@ void* prwdy(void *arg) {
             }
             
             if(buffer[0] == '/') { // If its a / command
-               if(strncmp(buffer, "/msg ", 5)) { // If its a /msg command
-                  add_message(thread_data, QUE_RECEIVE, "Bad command.");
-               } else {
+               if(strncmp(buffer, "/msg ", 5) == 0) { // If its a /msg command
+                  
                   name_start = strchr(buffer, ' ')+1;
                   
                   if(name_start) {
@@ -883,12 +882,15 @@ void* prwdy(void *arg) {
                      name[message - name_start] = '\0';
                      send_priv_mesg(thread_data, name, message+1);
                   }
-
-                  draw_prwdy(thread_data, win, buffer);                  
+                
                   message = NULL;
                   name[0]='\0';
                   
-               }
+               } else if(strncmp(buffer, "/quit", 5) == 0) { 
+                  thread_data->running = 0;
+               } else {
+                  add_message(thread_data, QUE_RECEIVE, "Bad command.");
+               }               
             } else { // For normal messages
                add_message(thread_data, QUE_SEND, buffer);
             }
@@ -906,6 +908,7 @@ void* prwdy(void *arg) {
             chnum++;
          }
          buffer[chnum] = '\0'; // Ensure last character is terminator
+         draw_prwdy(thread_data, win, buffer);
       }
    }
    
