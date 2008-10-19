@@ -659,6 +659,7 @@ void* priv_mesg(void *arg) {
       return (void*)EXIT_FAILURE;
    }
    
+   time_t start_time = time(NULL);
    /* Perform a whois request */
    nuke_whois(thread_data);
    char whois_message[MAX_DATA_SIZE];
@@ -667,7 +668,7 @@ void* priv_mesg(void *arg) {
    
    int got_reply = 0;
 
-   //while(time(NULL) - start_time < 6 && !got_reply) {
+   while(time(NULL) - start_time < 6 && !got_reply) {
       pthread_mutex_lock(&thread_data->mp); // Lock the mutex
       if(strcmp(thread_data->whois_username, name) == 0) {
          got_reply = 1;
@@ -675,13 +676,13 @@ void* priv_mesg(void *arg) {
          port = thread_data->whois_port;
       }
       pthread_mutex_unlock(&thread_data->mp); // Unlock the mutex
-   //}
+   }
          
    if(!got_reply) {
-      if(pmb->tries < NUMRETRIES) {
+      /*if(pmb->tries < NUMRETRIES) {
          fire_priv_mesg(pmb);
          return (void*)EXIT_FAILURE;
-      }
+      }*/
       logmsg(thread_data, "[priv_mesg] ERROR: No whois response...", stderr);
       freepmb(pmb);
       return (void*)EXIT_FAILURE;
