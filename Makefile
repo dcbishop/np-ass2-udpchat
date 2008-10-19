@@ -1,4 +1,4 @@
-SOLARISHACK=-lsocket
+#SOLARISHACK=-lsocket
 all: msg
 
 msg: msg.c
