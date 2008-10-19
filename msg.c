@@ -668,7 +668,7 @@ void* priv_mesg(void *arg) {
    
    int got_reply = 0;
 
-   while(time(NULL) - start_time < 6 && !got_reply) {
+   while(time(NULL) - start_time < NUMRETRIES+1 && !got_reply) {
       pthread_mutex_lock(&thread_data->mp); // Lock the mutex
       if(strcmp(thread_data->whois_username, name) == 0) {
          got_reply = 1;
@@ -679,6 +679,7 @@ void* priv_mesg(void *arg) {
    }
          
    if(!got_reply) {
+      /* This dies on Solaris */
       /*if(pmb->tries < NUMRETRIES) {
          fire_priv_mesg(pmb);
          return (void*)EXIT_FAILURE;
