@@ -851,9 +851,14 @@ void* prwdy(void *arg) {
       
       // Read keys
       while((c = getch()) != ERR) {
+         if(c == 4) { /* EOF - We die now */
+            thread_data->running = 0;
+         }
+            
          // When person pushes enter
          if(c == 13 || c == KEY_ENTER || chnum > MAX_DATA_SIZE-1) {
             if(buffer[0] == '\0') {
+               thread_data->running = 0; /* According to assignment specs we die now */
                draw_prwdy(thread_data, win, buffer);
                continue;
             }
